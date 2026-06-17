@@ -48,7 +48,7 @@ internal static class ImGuiApp
                     WriteMask = 0xF,
                     BlendingEnabled = 0,
                 };
-                scenePipeDesc[0] = ca;
+                scenePipeDesc.Colors[0] = ca;
             }
             using var scenePso = device.NewRenderPipelineState(vertFn, fragFn, scenePipeDesc);
 

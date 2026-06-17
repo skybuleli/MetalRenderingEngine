@@ -45,7 +45,7 @@ public sealed class MetalDrawable : MetalObject
             nuint h = MetalBridge.CAMetalDrawable_texture(Handle);
             if (h == 0)
                 throw new InvalidOperationException("CAMetalDrawable_texture returned null handle.");
-            MetalBridge.NSObject_retain(h); // drawable 内部是 autorelease，这里做独立 retain
+            // ID2H（__bridge_retained）已返回 +1 引用的句柄，SafeHandle Dispose 时会 release，无需额外 retain
             return new MetalTexture(h, 0, 0); // width/height 由 MetalTexture 内部从 native 获取
         }
     }

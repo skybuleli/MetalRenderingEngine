@@ -14,6 +14,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 允许 Demo 和 Test 项目访问 internal 成员 -->
+    <InternalsVisibleTo Include="MetalRenderingEngine.Demo" />
+    <InternalsVisibleTo Include="MetalRenderingEngine.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- 把编译好的桥接 dylib 复制到使用 Core 的项目的输出目录 -->
     <Content Include="$(MSBuildThisFileDirectory)../../out/libmetal_bridge.dylib">
       <Link>libmetal_bridge.dylib</Link>

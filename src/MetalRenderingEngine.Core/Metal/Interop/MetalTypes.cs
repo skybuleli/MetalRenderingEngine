@@ -71,9 +71,14 @@ public struct WMTRenderPipelineDesc
     public int DepthPixelFormat;
     public int StencilPixelFormat;
     public int SampleCount;
+}
 
-    /// <summary>安全索引器：通过 ref 返回颜色附件。</summary>
-    public ref WMTColorAttachment this[int i] => ref Colors[i];
+/// <summary>WMTRenderPipelineDesc 扩展方法（结构体方法不能 ref 返回 this 字段，CS8170）。</summary>
+public static class WMTRenderPipelineDescExtensions
+{
+    /// <summary>通过索引访问颜色附件。</summary>
+    public static ref WMTColorAttachment ColorAttachmentAt(this ref WMTRenderPipelineDesc desc, int i)
+        => ref desc.Colors[i];
 }
 
 /// <summary>
@@ -121,12 +126,18 @@ public struct WMTRenderPassDesc
     public WMTRenderPassAttachmentBuffer8 Colors;
     public WMTRenderPassAttachment Depth;
     public WMTRenderPassAttachment Stencil;
+}
 
+/// <summary>WMTRenderPassDesc 扩展方法（结构体方法不能 ref 返回 this 字段，CS8170）。</summary>
+public static class WMTRenderPassDescExtensions
+{
     /// <summary>安全获取颜色附件。</summary>
-    public ref WMTRenderPassAttachment ColorAt(int i) => ref Colors[i];
+    public static ref WMTRenderPassAttachment ColorAt(this ref WMTRenderPassDesc desc, int i)
+        => ref desc.Colors[i];
 
     /// <summary>安全设置颜色附件。</summary>
-    public void SetColorAt(int i, in WMTRenderPassAttachment attachment) => Colors[i] = attachment;
+    public static void SetColorAt(this ref WMTRenderPassDesc desc, int i, in WMTRenderPassAttachment attachment)
+        => desc.Colors[i] = attachment;
 }
 
 // ============================================================

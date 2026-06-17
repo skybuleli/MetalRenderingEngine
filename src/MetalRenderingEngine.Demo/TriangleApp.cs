@@ -44,7 +44,7 @@ internal static class TriangleApp
                     WriteMask = 0xF,
                     BlendingEnabled = 0,
                 };
-                pipeDesc[0] = ca;
+                pipeDesc.Colors[0] = ca;
             }
             using var pso = device.NewRenderPipelineState(vertFn, fragFn, pipeDesc);
 
@@ -68,7 +68,7 @@ internal static class TriangleApp
                 {
                     using var cmdbuf = queue.CommandBuffer();
 
-                    var passDesc = BuildRenderPassDesc(drawable.Texture);
+                    var passDesc = BuildRenderPassDesc(drawable.Texture.Handle);
                     using (var encoder = cmdbuf.RenderCommandEncoder(passDesc))
                     {
                         encoder.SetRenderPipelineState(pso);

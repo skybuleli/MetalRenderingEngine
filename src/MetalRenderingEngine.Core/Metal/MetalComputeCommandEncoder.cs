@@ -25,19 +25,19 @@ public sealed class MetalComputeCommandEncoder : MetalObject
     }
 
     /// <summary>把任意小常量数据原地传到 buffer(index)；适合 ≤ 4KB 的 uniform。</summary>
-    /// <summary>把纹理绑到 texture(index)。</summary>
-    public void SetTexture(MetalTexture texture, ulong index)
-    {
-        ArgumentNullException.ThrowIfNull(texture);
-        MetalBridge.MTLComputeCommandEncoder_setTexture(Handle, texture.Handle, index);
-    }
-
     public unsafe void SetBytes<T>(in T value, ulong index) where T : unmanaged
     {
         fixed (T* p = &value)
         {
             MetalBridge.MTLComputeCommandEncoder_setBytes(Handle, p, (ulong)sizeof(T), index);
         }
+    }
+
+    /// <summary>把纹理绑到 texture(index)。</summary>
+    public void SetTexture(MetalTexture texture, ulong index)
+    {
+        ArgumentNullException.ThrowIfNull(texture);
+        MetalBridge.MTLComputeCommandEncoder_setTexture(Handle, texture.Handle, index);
     }
 
     /// <summary>派发 thread group：threadgroupsPerGrid × threadsPerThreadgroup。</summary>
