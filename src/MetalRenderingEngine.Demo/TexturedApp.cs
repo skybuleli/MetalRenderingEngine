@@ -111,18 +111,8 @@ internal static class TexturedApp
         layer.SetDrawableSize(W, H);
 
         // ── 2. 着色器 + 管线 ────────────────────────────────
-        string vertPath = Path.Combine(AppContext.BaseDirectory, "shaders", "TexturedQuad.vert.metallib");
-        string fragPath = Path.Combine(AppContext.BaseDirectory, "shaders", "TexturedQuad.frag.metallib");
-        if (!File.Exists(vertPath) || !File.Exists(fragPath))
-        {
-            Console.Error.WriteLine("Missing TexturedQuad metallib files. Run ./build/compile_shaders.sh");
-            return 1;
-        }
-
-        using var vertLib = device.NewLibrary(File.ReadAllBytes(vertPath));
-        using var fragLib = device.NewLibrary(File.ReadAllBytes(fragPath));
-        using var vertFn = vertLib.NewFunction("main");
-        using var fragFn = fragLib.NewFunction("main");
+        using var vertFn = MetalShaderLoader.GetFunction(device, "TexturedQuad.vert", "main");
+        using var fragFn = MetalShaderLoader.GetFunction(device, "TexturedQuad.frag", "main");
 
         var pipeDesc = new WMTRenderPipelineDesc { ColorCount = 1, SampleCount = 1 };
         unsafe

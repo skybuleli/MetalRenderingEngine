@@ -10,16 +10,13 @@
     <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
   </PropertyGroup>
 
+  <Import Project="$(MSBuildThisFileDirectory)../../build/targets/MetalShaders.targets" />
+
   <ItemGroup>
     <ProjectReference Include="../MetalRenderingEngine.Core/MetalRenderingEngine.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Phase 1：把 .metallib 作为内容文件复制到 bin/<cfg>/net10.0/shaders/ -->
-    <Content Include="$(MSBuildThisFileDirectory)../../out/shaders/*.metallib">
-      <Link>shaders/%(Filename)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
     <!-- Phase 2：SDL3 dylib -->
     <Content Include="/opt/homebrew/lib/libSDL3.dylib">
       <Link>libSDL3.dylib</Link>

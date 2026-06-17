@@ -1,0 +1,49 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!--
+    MetalShaders.targets — MSBuild 着色器编译集成
+    在 BeforeBuild 前自动编译所有 .slang → .dxil → .metallib，
+    slangc 错误重映射为 IDE 可点击格式。
+  -->
+
+  <PropertyGroup>
+    <!-- 着色器源码路径（相对 targets 文件） -->
+    <ShaderProjectRoot>$(MSBuildThisFileDirectory)../../src/MetalRenderingEngine.Shaders</ShaderProjectRoot>
+    <!-- 编译包装脚本路径 -->
+    <ShaderCompileScript>$(MSBuildThisFileDirectory)../compile_one_shader.sh</ShaderCompileScript>
+    <!-- 编译中间产物路径（.dxil + .metallib） -->
+    <ShaderIntermediateOutputDir>$(IntermediateOutputPath)shaders/</ShaderIntermediateOutputDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 自动发现所有 .slang 文件 -->
+    <MetalShader Include="$(ShaderProjectRoot)/**/*.slang" />
+  </ItemGroup>
+  
+  <!--
+    CompileMetalShaders — 主编译 target，在 BeforeBuild 前运行。
+    Inputs/Outputs 提供全量增量检测：任一个 .slang 比对应 .metallib 新即全量重编。
+  -->
+  <Target Name="CompileMetalShaders"
+          BeforeTargets="BeforeBuild"
+          Inputs="@(MetalShader)"
+          Outputs="@(MetalShader->'$(MSBuildProjectDirectory)/$(IntermediateOutputPath)shaders/%(Filename).metallib')">
+  
+    <PropertyGroup>
+      <!-- 输出目录 -->
+      <_OutputDir>$(MSBuildProjectDirectory)/$(IntermediateOutputPath)shaders/</_OutputDir>
+    </PropertyGroup>
+  
+    <MakeDir Directories="$(_OutputDir)" />
+  
+    <!-- stage 由 compile_one_shader.sh 从文件名后缀自动推断 -->
+    <Exec Command="$(ShaderCompileScript) &quot;%(MetalShader.Identity)&quot; &quot;$(_OutputDir)%(MetalShader.Filename).dxil&quot; &quot;$(_OutputDir)%(MetalShader.Filename).metallib&quot;"
+          StandardOutputImportance="high" />
+  
+    <!-- 编译后将 .metallib 复制到输出目录 shaders/ -->
+    <Copy SourceFiles="$(_OutputDir)%(MetalShader.Filename).metallib"
+          DestinationFolder="$(MSBuildProjectDirectory)/$(OutDir)shaders"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

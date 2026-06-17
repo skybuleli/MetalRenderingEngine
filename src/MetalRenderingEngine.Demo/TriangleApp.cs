@@ -29,18 +29,8 @@ internal static class TriangleApp
             layer.SetDrawableSize(WindowWidth, WindowHeight);
 
             // 3) 加载着色器
-            string vertPath = Path.Combine(AppContext.BaseDirectory, "shaders", "Triangle.vert.metallib");
-            string fragPath = Path.Combine(AppContext.BaseDirectory, "shaders", "Triangle.frag.metallib");
-            if (!File.Exists(vertPath) || !File.Exists(fragPath))
-            {
-                Console.Error.WriteLine("Missing metallib files. Run ./build/compile_shaders.sh");
-                return 1;
-            }
-
-            using var vertLib = device.NewLibrary(File.ReadAllBytes(vertPath));
-            using var fragLib = device.NewLibrary(File.ReadAllBytes(fragPath));
-            using var vertFn = vertLib.NewFunction("main");
-            using var fragFn = fragLib.NewFunction("main");
+            using var vertFn = MetalShaderLoader.GetFunction(device, "Triangle.vert", "main");
+            using var fragFn = MetalShaderLoader.GetFunction(device, "Triangle.frag", "main");
 
             // 4) 创建 render pipeline
             var pipeDesc = new WMTRenderPipelineDesc();

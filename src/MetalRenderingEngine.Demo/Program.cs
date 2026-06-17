@@ -57,18 +57,8 @@ internal static class ComputeDemo
         using var device = MetalDevice.CreateSystemDefault();
         Console.WriteLine($"Device: {device.Name}  (UMA: {device.HasUnifiedMemory})");
 
-        // 2) 加载 metallib（从 bin/<cfg>/net10.0/shaders/Multiply.metallib）
-        string metallibPath = Path.Combine(AppContext.BaseDirectory, "shaders", "Multiply.metallib");
-        if (!File.Exists(metallibPath))
-        {
-            Console.Error.WriteLine($"❌ Missing metallib at {metallibPath}");
-            Console.Error.WriteLine("   Run ./build/compile_shaders.sh and rebuild the project.");
-            return 1;
-        }
-        byte[] metallibBytes = File.ReadAllBytes(metallibPath);
-
-        using var library = device.NewLibrary(metallibBytes);
-        using var function = library.NewFunction("main");
+        // 2) 加载 metallib
+        using var function = MetalShaderLoader.GetFunction(device, "Multiply", "main");
         using var pso = device.NewComputePipelineState(function);
         Console.WriteLine($"PSO: maxTotalThreadsPerThreadgroup={pso.MaxTotalThreadsPerThreadgroup}, " +
                           $"threadExecutionWidth={pso.ThreadExecutionWidth}");
