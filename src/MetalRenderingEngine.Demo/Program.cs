@@ -29,7 +29,8 @@ internal static class Program
         {
             if (mode == "compute") return ComputeDemo.Run();
             if (mode == "triangle") return TriangleApp.Run();
-            Console.Error.WriteLine("Usage: dotnet run -- [compute|triangle]");
+            if (mode == "textured") return TexturedApp.Run();
+            Console.Error.WriteLine("Usage: dotnet run -- [compute|triangle|textured]");
             return 1;
         }
         catch (MetalException ex)

@@ -523,3 +523,119 @@ uint64_t MTLTexture_getBytes(mtl_handle_t texture, void *dst, uint64_t dst_size,
     [tex getBytes:dst bytesPerRow:bytesPerRow fromRegion:region mipmapLevel:(NSUInteger)mip_level];
     return (uint64_t)requiredSize;
 }
+
+/* ============================================================
+ *  Phase 3: MTLTexture 创建与写入
+ * ============================================================ */
+
+mtl_handle_t MTLDevice_newTexture(mtl_handle_t device, const struct WMTTextureInfo *info) {
+    if (device == MTL_NULL_HANDLE || info == NULL) return MTL_NULL_HANDLE;
+    id<MTLDevice> dev = H2ID(device);
+    MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:(MTLPixelFormat)info->pixel_format
+                                                                                   width:(NSUInteger)info->width
+                                                                                  height:(NSUInteger)info->height
+                                                                              mipmapped:(info->mipmap_levels > 1)];
+    td.textureType = (info->texture_type == 2) ? MTLTextureType2D : MTLTextureType2D;
+    td.storageMode = (MTLStorageMode)((info->options >> 4) & 0xF);
+    td.usage = (MTLTextureUsage)info->usage;
+    td.mipmapLevelCount = (NSUInteger)(info->mipmap_levels > 0 ? info->mipmap_levels : 1);
+    td.sampleCount = (NSUInteger)(info->sample_count > 0 ? info->sample_count : 1);
+    id<MTLTexture> tex = [dev newTextureWithDescriptor:td];
+    return tex ? ID2H(tex) : MTL_NULL_HANDLE;
+}
+
+void MTLTexture_replaceRegion(mtl_handle_t texture, struct WMTOrigin origin, struct WMTSize size,
+                               uint64_t mip_level, uint64_t slice,
+                               const void *data, uint64_t bytes_per_row, uint64_t bytes_per_image) {
+    if (texture == MTL_NULL_HANDLE || data == NULL) return;
+    id<MTLTexture> tex = H2ID(texture);
+    MTLRegion region = { {(NSUInteger)origin.x, (NSUInteger)origin.y, (NSUInteger)origin.z},
+                         {(NSUInteger)size.width, (NSUInteger)size.height, (NSUInteger)size.depth} };
+    [tex replaceRegion:region mipmapLevel:(NSUInteger)mip_level slice:(NSUInteger)slice
+             withBytes:data bytesPerRow:(NSUInteger)bytes_per_row bytesPerImage:(NSUInteger)bytes_per_image];
+}
+
+/* ============================================================
+ *  Phase 3: MTLSamplerState
+ * ============================================================ */
+
+mtl_handle_t MTLDevice_newSamplerState(mtl_handle_t device, const struct WMTSamplerInfo *info) {
+    if (device == MTL_NULL_HANDLE || info == NULL) return MTL_NULL_HANDLE;
+    id<MTLDevice> dev = H2ID(device);
+    MTLSamplerDescriptor *sd = [[MTLSamplerDescriptor alloc] init];
+    sd.minFilter = (MTLSamplerMinMagFilter)info->min_filter;
+    sd.magFilter = (MTLSamplerMinMagFilter)info->mag_filter;
+    sd.mipFilter = (MTLSamplerMipFilter)info->mip_filter;
+    sd.sAddressMode = (MTLSamplerAddressMode)info->s_address_mode;
+    sd.tAddressMode = (MTLSamplerAddressMode)info->t_address_mode;
+    sd.rAddressMode = (MTLSamplerAddressMode)info->r_address_mode;
+    sd.maxAnisotropy = (NSUInteger)info->max_anisotropy;
+    sd.lodMinClamp = info->lod_min_clamp;
+    sd.lodMaxClamp = info->lod_max_clamp;
+    if (info->compare_function >= 0) sd.compareFunction = (MTLCompareFunction)info->compare_function;
+    id<MTLSamplerState> sampler = [dev newSamplerStateWithDescriptor:sd];
+    return sampler ? ID2H(sampler) : MTL_NULL_HANDLE;
+}
+
+/* ============================================================
+ *  Phase 3: MTLFence
+ * ============================================================ */
+
+mtl_handle_t MTLDevice_newFence(mtl_handle_t device) {
+    if (device == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
+    id<MTLDevice> dev = H2ID(device);
+    id<MTLFence> fence = [dev newFence];
+    return fence ? ID2H(fence) : MTL_NULL_HANDLE;
+}
+
+/* ============================================================
+ *  Phase 3: MTLRenderCommandEncoder 扩展
+ * ============================================================ */
+
+void MTLRenderCommandEncoder_setVertexBytes(mtl_handle_t encoder, const void *bytes, uint64_t length, uint64_t index) {
+    if (encoder == MTL_NULL_HANDLE || bytes == NULL) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    [e setVertexBytes:bytes length:(NSUInteger)length atIndex:(NSUInteger)index];
+}
+
+void MTLRenderCommandEncoder_setFragmentBuffer(mtl_handle_t encoder, mtl_handle_t buffer, uint64_t offset, uint64_t index) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    [e setFragmentBuffer:H2ID(buffer) offset:(NSUInteger)offset atIndex:(NSUInteger)index];
+}
+
+void MTLRenderCommandEncoder_setFragmentBytes(mtl_handle_t encoder, const void *bytes, uint64_t length, uint64_t index) {
+    if (encoder == MTL_NULL_HANDLE || bytes == NULL) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    [e setFragmentBytes:bytes length:(NSUInteger)length atIndex:(NSUInteger)index];
+}
+
+void MTLRenderCommandEncoder_setFragmentTexture(mtl_handle_t encoder, mtl_handle_t texture, uint64_t index) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    [e setFragmentTexture:H2ID(texture) atIndex:(NSUInteger)index];
+}
+
+void MTLRenderCommandEncoder_setFragmentSamplerState(mtl_handle_t encoder, mtl_handle_t sampler, uint64_t index) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    [e setFragmentSamplerState:H2ID(sampler) atIndex:(NSUInteger)index];
+}
+
+void MTLRenderCommandEncoder_useResource(mtl_handle_t encoder, mtl_handle_t resource, uint32_t usage, uint32_t stages) {
+    if (encoder == MTL_NULL_HANDLE || resource == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    [e useResource:(id<MTLResource>)H2ID(resource) usage:(MTLResourceUsage)usage stages:(MTLRenderStages)stages];
+}
+
+void MTLRenderCommandEncoder_waitForFence(mtl_handle_t encoder, mtl_handle_t fence, uint32_t before_stages) {
+    if (encoder == MTL_NULL_HANDLE || fence == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    [e waitForFence:H2ID(fence) beforeStages:(MTLRenderStages)before_stages];
+}
+
+void MTLRenderCommandEncoder_updateFence(mtl_handle_t encoder, mtl_handle_t fence, uint32_t after_stages) {
+    if (encoder == MTL_NULL_HANDLE || fence == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    [e updateFence:H2ID(fence) afterStages:(MTLRenderStages)after_stages];
+}

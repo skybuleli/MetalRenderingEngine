@@ -302,6 +302,126 @@ uint64_t MTLTexture_getBytes(mtl_handle_t texture, void *dst, uint64_t dst_size,
 /* 获取纹理的行字节数（bytesPerRow），用于计算读取缓冲区大小 */
 uint64_t MTLTexture_bytesPerRow(mtl_handle_t texture, uint64_t mip_level);
 
+/* ============================================================
+ *  Phase 3 枚举
+ * ============================================================ */
+
+enum WMTTextureType {
+    WMTTextureType2D = 2,
+};
+
+enum WMTTextureUsage {
+    WMTTextureUsageShaderRead   = 1,
+    WMTTextureUsageShaderWrite  = 2,
+    WMTTextureUsageRenderTarget = 4,
+};
+
+enum WMTSamplerMinMagFilter {
+    WMTSamplerMinMagFilterNearest = 0,
+    WMTSamplerMinMagFilterLinear  = 1,
+};
+
+enum WMTSamplerMipFilter {
+    WMTSamplerMipFilterNotMipmapped = 0,
+    WMTSamplerMipFilterNearest      = 1,
+    WMTSamplerMipFilterLinear       = 2,
+};
+
+enum WMTSamplerAddressMode {
+    WMTSamplerAddressModeClampToEdge   = 0,
+    WMTSamplerAddressModeRepeat        = 2,
+    WMTSamplerAddressModeMirrorRepeat  = 3,
+};
+
+enum WMTCompareFunction {
+    WMTCompareFunctionNever    = 0,
+    WMTCompareFunctionLess     = 1,
+    WMTCompareFunctionEqual    = 2,
+    WMTCompareFunctionLEqual   = 3,
+    WMTCompareFunctionGreater  = 4,
+    WMTCompareFunctionNotEqual = 5,
+    WMTCompareFunctionGEqual   = 6,
+    WMTCompareFunctionAlways   = 7,
+};
+
+enum WMTRenderStages {
+    WMTRenderStageVertex   = 1,
+    WMTRenderStageFragment = 2,
+};
+
+/* ============================================================
+ *  Phase 3 结构体
+ * ============================================================ */
+
+struct WMTTextureInfo {
+    int pixel_format;      /* WMTPixelFormat */
+    int texture_type;      /* WMTTextureType */
+    uint64_t width;
+    uint64_t height;
+    uint64_t depth;
+    int mipmap_levels;
+    int sample_count;
+    int usage;             /* WMTTextureUsage 位或 */
+    int options;           /* WMTResourceOptions 位或 */
+};
+
+struct WMTSamplerInfo {
+    int min_filter;        /* WMTSamplerMinMagFilter */
+    int mag_filter;        /* WMTSamplerMinMagFilter */
+    int mip_filter;        /* WMTSamplerMipFilter */
+    int s_address_mode;    /* WMTSamplerAddressMode */
+    int t_address_mode;    /* WMTSamplerAddressMode */
+    int r_address_mode;    /* WMTSamplerAddressMode */
+    int max_anisotropy;
+    int compare_function;  /* WMTCompareFunction; -1 = disabled */
+    float lod_min_clamp;
+    float lod_max_clamp;
+};
+
+/* 三维原点（对应 MTLOrigin） */
+struct WMTOrigin {
+    uint64_t x;
+    uint64_t y;
+    uint64_t z;
+};
+
+/* ============================================================
+ *  Phase 3: MTLTexture 创建与写入
+ * ============================================================ */
+
+mtl_handle_t MTLDevice_newTexture(mtl_handle_t device, const struct WMTTextureInfo *info);
+
+/* 上传像素数据到纹理的指定区域和 mip 级别 */
+void MTLTexture_replaceRegion(mtl_handle_t texture,
+                               struct WMTOrigin origin, struct WMTSize size,
+                               uint64_t mip_level, uint64_t slice,
+                               const void *data, uint64_t bytes_per_row, uint64_t bytes_per_image);
+
+/* ============================================================
+ *  Phase 3: MTLSamplerState
+ * ============================================================ */
+
+mtl_handle_t MTLDevice_newSamplerState(mtl_handle_t device, const struct WMTSamplerInfo *info);
+
+/* ============================================================
+ *  Phase 3: MTLFence
+ * ============================================================ */
+
+mtl_handle_t MTLDevice_newFence(mtl_handle_t device);
+
+/* ============================================================
+ *  Phase 3: MTLRenderCommandEncoder 扩展
+ * ============================================================ */
+
+void MTLRenderCommandEncoder_setVertexBytes(mtl_handle_t encoder, const void *bytes, uint64_t length, uint64_t index);
+void MTLRenderCommandEncoder_setFragmentBuffer(mtl_handle_t encoder, mtl_handle_t buffer, uint64_t offset, uint64_t index);
+void MTLRenderCommandEncoder_setFragmentBytes(mtl_handle_t encoder, const void *bytes, uint64_t length, uint64_t index);
+void MTLRenderCommandEncoder_setFragmentTexture(mtl_handle_t encoder, mtl_handle_t texture, uint64_t index);
+void MTLRenderCommandEncoder_setFragmentSamplerState(mtl_handle_t encoder, mtl_handle_t sampler, uint64_t index);
+void MTLRenderCommandEncoder_useResource(mtl_handle_t encoder, mtl_handle_t resource, uint32_t usage, uint32_t stages);
+void MTLRenderCommandEncoder_waitForFence(mtl_handle_t encoder, mtl_handle_t fence, uint32_t before_stages);
+void MTLRenderCommandEncoder_updateFence(mtl_handle_t encoder, mtl_handle_t fence, uint32_t after_stages);
+
 #ifdef __cplusplus
 }
 #endif
