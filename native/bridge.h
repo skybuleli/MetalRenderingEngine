@@ -283,6 +283,25 @@ mtl_handle_t CAMetalDrawable_texture(mtl_handle_t drawable);
 /* 在 cmdbuf 提交前呈现 */
 void MTLCommandBuffer_presentDrawable(mtl_handle_t cmdbuf, mtl_handle_t drawable);
 
+/* 轮询一次 Cocoa 事件队列；返回 0 = 窗口仍打开，1 = 用户请求关闭 */
+int Cocoa_PollEvents(void);
+
+/* ============================================================
+ *  MTLTexture（只读回读）
+ * ============================================================ */
+
+/* 获取纹理尺寸（像素） */
+uint64_t MTLTexture_width(mtl_handle_t texture);
+uint64_t MTLTexture_height(mtl_handle_t texture);
+
+/* 从纹理的指定 mip 级别读取像素数据到 dst（调用方分配，至少 dst_size 字节）。
+ * 内部调用 [MTLTexture getBytes:bytesPerRow:fromRegion:mipmapLevel:]。
+ * 返回实际写入字节数；失败返回 0。 */
+uint64_t MTLTexture_getBytes(mtl_handle_t texture, void *dst, uint64_t dst_size, uint64_t mip_level);
+
+/* 获取纹理的行字节数（bytesPerRow），用于计算读取缓冲区大小 */
+uint64_t MTLTexture_bytesPerRow(mtl_handle_t texture, uint64_t mip_level);
+
 #ifdef __cplusplus
 }
 #endif

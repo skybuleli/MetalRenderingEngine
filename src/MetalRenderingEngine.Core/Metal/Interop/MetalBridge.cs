@@ -193,4 +193,23 @@ internal static partial class MetalBridge
 
     [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_presentDrawable")]
     public static partial void MTLCommandBuffer_presentDrawable(nuint cmdbuf, nuint drawable);
+
+    [LibraryImport(LibraryName, EntryPoint = "Cocoa_PollEvents")]
+    public static partial int Cocoa_PollEvents();
+
+    // ============================================================
+    //  MTLTexture（只读回读）
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLTexture_width")]
+    public static partial ulong MTLTexture_width(nuint texture);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLTexture_height")]
+    public static partial ulong MTLTexture_height(nuint texture);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLTexture_bytesPerRow")]
+    public static partial ulong MTLTexture_bytesPerRow(nuint texture, ulong mip_level);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLTexture_getBytes")]
+    public static unsafe partial ulong MTLTexture_getBytes(nuint texture, void* dst, ulong dst_size, ulong mip_level);
 }
