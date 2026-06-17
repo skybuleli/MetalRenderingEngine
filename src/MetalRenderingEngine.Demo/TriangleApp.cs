@@ -6,8 +6,7 @@ using MetalRenderingEngine.Platform;
 namespace MetalRenderingEngine.Demo;
 
 /// <summary>
-/// Phase 2 验证：Cocoa 窗口 + Metal 渲染彩色三角形。
-/// SDL3 在当前环境初始化失败，使用 Cocoa 直接创建窗口。
+/// Phase 2 验证：SDL3 窗口 + Metal 渲染彩色三角形。
 /// </summary>
 internal static class TriangleApp
 {
@@ -22,9 +21,9 @@ internal static class TriangleApp
             using var device = MetalDevice.CreateSystemDefault();
             Console.WriteLine($"Device: {device.Name}");
 
-            // 2) Cocoa 窗口 + CAMetalLayer（通过 bridge.m）
-            using var cocoaWindow = CocoaWindow.Create("Metal Triangle — Phase 2", WindowWidth, WindowHeight);
-            var layer = new MetalLayer(cocoaWindow.LayerHandle);
+            // 2) SDL3 窗口 + CAMetalLayer
+            using var sdlWindow = SDL3Window.Create("Metal Triangle — Phase 2 (SDL3)", WindowWidth, WindowHeight);
+            var layer = new MetalLayer(sdlWindow.LayerHandle);
             layer.SetDevice(device);
             layer.SetPixelFormat(MTLPixelFormat.BGRA8Unorm);
             layer.SetDrawableSize(WindowWidth, WindowHeight);
@@ -59,13 +58,15 @@ internal static class TriangleApp
             }
             using var pso = device.NewRenderPipelineState(vertFn, fragFn, pipeDesc);
 
-            // 5) 主循环（简化为固定帧数，无事件处理）
+            // 5) 主循环（持续运行直到按 ESC 或关闭窗口）
             using var queue = device.NewCommandQueue();
             int frame = 0;
-            const int targetFrames = 180; // ~3s @ 60fps
 
-            while (frame < targetFrames)
+            while (true)
             {
+                // 轮询 SDL3 事件；返回 true 表示用户请求关闭
+                if (sdlWindow.PollShouldClose())
+                    break;
                 var drawable = layer.NextDrawable();
                 if (drawable == null)
                 {
@@ -95,7 +96,7 @@ internal static class TriangleApp
                 Thread.Sleep(16);
             }
 
-            Console.WriteLine($"✅ Rendered {frame} frames. Triangle visible in Cocoa window.");
+            Console.WriteLine($"✅ Rendered {frame} frames. Triangle visible in SDL3 window.");
             return 0;
         }
         catch (MetalException ex)
