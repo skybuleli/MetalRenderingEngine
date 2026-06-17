@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 编译 native/bridge.m → out/libmetal_bridge.dylib
-# 仅依赖 Apple Metal.framework + Foundation；纯 ObjC，无 ARC（手动 retain/release 通过 CFRetain/CFRelease）
+# 仅依赖 Apple Metal.framework + Foundation；启用 ARC 仅用于 __bridge 语法支持，
+# 引用计数仍由 H2ID/ID2H 宏 + CFRetain/CFRelease 手动管理。
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

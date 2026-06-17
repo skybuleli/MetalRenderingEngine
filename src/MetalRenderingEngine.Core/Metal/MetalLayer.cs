@@ -7,7 +7,7 @@ namespace MetalRenderingEngine.Metal;
 /// </summary>
 public sealed class MetalLayer : MetalObject
 {
-    public MetalLayer(nuint handle) { SetNativeHandle(handle); }
+    internal MetalLayer(nuint handle) { SetNativeHandle(handle); }
 
     public void SetDevice(MetalDevice device)
     {
@@ -35,5 +35,18 @@ public sealed class MetalDrawable : MetalObject
 {
     internal MetalDrawable(nuint handle) { SetNativeHandle(handle); }
 
-    public nuint TextureHandle => MetalBridge.CAMetalDrawable_texture(Handle);
+    /// <summary>
+    /// 获取 drawable 关联的 MTLTexture。返回的 MetalTexture 经过 retain，独立于 drawable 生命周期。
+    /// </summary>
+    public MetalTexture Texture
+    {
+        get
+        {
+            nuint h = MetalBridge.CAMetalDrawable_texture(Handle);
+            if (h == 0)
+                throw new InvalidOperationException("CAMetalDrawable_texture returned null handle.");
+            MetalBridge.NSObject_retain(h); // drawable 内部是 autorelease，这里做独立 retain
+            return new MetalTexture(h, 0, 0); // width/height 由 MetalTexture 内部从 native 获取
+        }
+    }
 }

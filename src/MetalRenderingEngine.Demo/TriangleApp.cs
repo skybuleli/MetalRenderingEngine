@@ -44,7 +44,7 @@ internal static class TriangleApp
                     WriteMask = 0xF,
                     BlendingEnabled = 0,
                 };
-                *(WMTColorAttachment*)pipeDesc.ColorsRaw = ca;
+                pipeDesc[0] = ca;
             }
             using var pso = device.NewRenderPipelineState(vertFn, fragFn, pipeDesc);
 
@@ -68,7 +68,7 @@ internal static class TriangleApp
                 {
                     using var cmdbuf = queue.CommandBuffer();
 
-                    var passDesc = BuildRenderPassDesc(drawable.TextureHandle);
+                    var passDesc = BuildRenderPassDesc(drawable.Texture);
                     using (var encoder = cmdbuf.RenderCommandEncoder(passDesc))
                     {
                         encoder.SetRenderPipelineState(pso);
@@ -111,7 +111,7 @@ internal static class TriangleApp
             StoreAction = (int)MTLStoreAction.Store,
             ClearColor = new WMTClearColor(0.15f, 0.18f, 0.22f, 1.0f),
         };
-        *(WMTRenderPassAttachment*)passDesc.ColorsRaw = colorAtt;
+        passDesc.SetColorAt(0, colorAtt);
         return passDesc;
     }
 }

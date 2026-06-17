@@ -48,7 +48,7 @@ internal static class ImGuiApp
                     WriteMask = 0xF,
                     BlendingEnabled = 0,
                 };
-                *(WMTColorAttachment*)scenePipeDesc.ColorsRaw = ca;
+                scenePipeDesc[0] = ca;
             }
             using var scenePso = device.NewRenderPipelineState(vertFn, fragFn, scenePipeDesc);
 
@@ -168,7 +168,7 @@ internal static class ImGuiApp
                     using var cmdbuf = queue.CommandBuffer();
 
                     // Scene pass
-                    var scenePassDesc = BuildRenderPassDesc(drawable.TextureHandle, clear: true);
+                    var scenePassDesc = BuildRenderPassDesc(drawable.Texture.Handle, clear: true);
                     var sceneEnc = cmdbuf.RenderCommandEncoder(scenePassDesc);
                     try
                     {
@@ -203,7 +203,7 @@ internal static class ImGuiApp
                     }
 
                     // ImGui overlay pass
-                    var uiPassDesc = BuildRenderPassDesc(drawable.TextureHandle, clear: false);
+                    var uiPassDesc = BuildRenderPassDesc(drawable.Texture.Handle, clear: false);
                     var uiEnc = cmdbuf.RenderCommandEncoder(uiPassDesc);
                     try
                     {
@@ -282,7 +282,7 @@ internal static class ImGuiApp
             StoreAction = (int)MTLStoreAction.Store,
             ClearColor = new WMTClearColor(0.15f, 0.18f, 0.22f, 1f),
         };
-        *(WMTRenderPassAttachment*)passDesc.ColorsRaw = att;
+        passDesc.SetColorAt(0, att);
         return passDesc;
     }
 }

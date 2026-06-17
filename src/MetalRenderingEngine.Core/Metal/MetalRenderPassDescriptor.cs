@@ -13,7 +13,7 @@ public sealed class MetalRenderPassDescriptor : IDisposable
     public static MetalRenderPassDescriptor CreateForTexture(MetalDrawable drawable)
     {
         ArgumentNullException.ThrowIfNull(drawable);
-        nuint h = MetalBridge.MTLRenderPassDescriptor_createForTexture(drawable.TextureHandle);
+        nuint h = MetalBridge.MTLRenderPassDescriptor_createForTexture(drawable.Texture.Handle);
         if (h == 0) throw new MetalException("Failed to create MTLRenderPassDescriptor.");
         return new MetalRenderPassDescriptor(h);
     }

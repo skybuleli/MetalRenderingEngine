@@ -200,7 +200,7 @@ mtl_handle_t MTLCommandQueue_commandBuffer(mtl_handle_t queue) {
     id<MTLCommandQueue> q = H2ID(queue);
     /* commandBuffer 返回 autoreleased，CFRetain 一份给 C 层 */
     id<MTLCommandBuffer> cb = [q commandBuffer];
-    return cb ? (mtl_handle_t)(uintptr_t)CFBridgingRetain(cb) : MTL_NULL_HANDLE;
+    return cb ? ID2H(cb) : MTL_NULL_HANDLE;
 }
 
 void MTLCommandBuffer_commit(mtl_handle_t cmdbuf) {
@@ -225,7 +225,7 @@ mtl_handle_t MTLCommandBuffer_error(mtl_handle_t cmdbuf) {
     if (cmdbuf == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
     id<MTLCommandBuffer> cb = H2ID(cmdbuf);
     NSError *err = [cb error];
-    return err ? (mtl_handle_t)(uintptr_t)CFBridgingRetain(err) : MTL_NULL_HANDLE;
+    return err ? ID2H(err) : MTL_NULL_HANDLE;
 }
 
 /* ============================================================
@@ -236,7 +236,7 @@ mtl_handle_t MTLCommandBuffer_computeCommandEncoder(mtl_handle_t cmdbuf) {
     if (cmdbuf == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
     id<MTLCommandBuffer> cb = H2ID(cmdbuf);
     id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
-    return enc ? (mtl_handle_t)(uintptr_t)CFBridgingRetain(enc) : MTL_NULL_HANDLE;
+    return enc ? ID2H(enc) : MTL_NULL_HANDLE;
 }
 
 void MTLComputeCommandEncoder_setComputePipelineState(mtl_handle_t encoder, mtl_handle_t pso) {
@@ -358,7 +358,7 @@ mtl_handle_t MTLCommandBuffer_renderCommandEncoder(mtl_handle_t cmdbuf,
     }
 
     id<MTLRenderCommandEncoder> enc = [cb renderCommandEncoderWithDescriptor:rpd];
-    return enc ? (mtl_handle_t)(uintptr_t)CFBridgingRetain(enc) : MTL_NULL_HANDLE;
+    return enc ? ID2H(enc) : MTL_NULL_HANDLE;
 }
 
 void MTLRenderCommandEncoder_setRenderPipelineState(mtl_handle_t encoder, mtl_handle_t pso) {
@@ -428,15 +428,10 @@ void MTLRenderCommandEncoder_endEncoding(mtl_handle_t encoder) {
  *  CAMetalLayer / CAMetalDrawable
  * ============================================================ */
 
-mtl_handle_t CAMetalLayer_fromView(mtl_handle_t view) {
-    if (view == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
-    NSView *nsView = H2ID(view);
-    /* 确保 view 有 wantsLayer 并附加 CAMetalLayer */
-    nsView.wantsLayer = YES;
-    CAMetalLayer *layer = [CAMetalLayer layer];
-    nsView.layer = layer;
-    return ID2H(layer);
-}
+/* CAMetalLayer_fromView removed — dead code.
+ * NSWindow + CAMetalLayer 创建统一由 Cocoa_CreateMetalWindow 处理。
+ * 参见 src/MetalRenderingEngine.Core/Platform/CocoaWindow.cs。
+ */
 
 void CAMetalLayer_setDevice(mtl_handle_t layer, mtl_handle_t device) {
     if (layer == MTL_NULL_HANDLE || device == MTL_NULL_HANDLE) return;
@@ -460,14 +455,14 @@ mtl_handle_t CAMetalLayer_nextDrawable(mtl_handle_t layer) {
     if (layer == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
     CAMetalLayer *ml = H2ID(layer);
     id<CAMetalDrawable> drawable = [ml nextDrawable];
-    return drawable ? (mtl_handle_t)(uintptr_t)CFBridgingRetain(drawable) : MTL_NULL_HANDLE;
+    return drawable ? ID2H(drawable) : MTL_NULL_HANDLE;
 }
 
 mtl_handle_t CAMetalDrawable_texture(mtl_handle_t drawable) {
     if (drawable == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
     id<CAMetalDrawable> d = H2ID(drawable);
     id<MTLTexture> tex = d.texture;
-    return tex ? (mtl_handle_t)(uintptr_t)CFBridgingRetain(tex) : MTL_NULL_HANDLE;
+    return tex ? ID2H(tex) : MTL_NULL_HANDLE;
 }
 
 void MTLCommandBuffer_presentDrawable(mtl_handle_t cmdbuf, mtl_handle_t drawable) {
@@ -554,7 +549,7 @@ uint64_t MTLTexture_height(mtl_handle_t texture) {
 uint64_t MTLTexture_bytesPerRow(mtl_handle_t texture, uint64_t mip_level) {
     if (texture == MTL_NULL_HANDLE) return 0;
     id tex = H2ID(texture);
-    return (uint64_t)((NSUInteger (*)(id, SEL))objc_msgSend)(tex, @selector(bytesPerRow));
+    return (uint64_t)[(id<MTLTexture>)tex bytesPerRow];
 }
 
 uint64_t MTLTexture_getBytes(mtl_handle_t texture, void *dst, uint64_t dst_size, uint64_t mip_level) {
@@ -562,7 +557,7 @@ uint64_t MTLTexture_getBytes(mtl_handle_t texture, void *dst, uint64_t dst_size,
     id tex = H2ID(texture);
     NSUInteger width = (NSUInteger)[(id<MTLTexture>)tex width];
     NSUInteger height = (NSUInteger)[(id<MTLTexture>)tex height];
-    NSUInteger bytesPerRow = (NSUInteger)((NSUInteger (*)(id, SEL))objc_msgSend)(tex, @selector(bytesPerRow));
+    NSUInteger bytesPerRow = [(id<MTLTexture>)tex bytesPerRow];
     NSUInteger requiredSize = bytesPerRow * height;
     if (dst_size < requiredSize) return 0;
     MTLRegion region = MTLRegionMake2D(0, 0, width, height);
@@ -694,7 +689,7 @@ mtl_handle_t MTLFunction_newArgumentEncoder(mtl_handle_t function, uint64_t buff
     if (function == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
     id<MTLFunction> fn = H2ID(function);
     id<MTLArgumentEncoder> enc = [fn newArgumentEncoderWithBufferIndex:(NSUInteger)buffer_index];
-    return enc ? (mtl_handle_t)(uintptr_t)CFBridgingRetain(enc) : MTL_NULL_HANDLE;
+    return enc ? ID2H(enc) : MTL_NULL_HANDLE;
 }
 
 uint64_t MTLArgumentEncoder_encodedLength(mtl_handle_t encoder) {

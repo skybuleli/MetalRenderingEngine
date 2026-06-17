@@ -123,7 +123,7 @@ internal static class TexturedApp
                 WriteMask = 0xF,
                 BlendingEnabled = 0,
             };
-            *(WMTColorAttachment*)pipeDesc.ColorsRaw = ca;
+            pipeDesc[0] = ca;
         }
         using var pso = device.NewRenderPipelineState(vertFn, fragFn, pipeDesc);
 
@@ -173,7 +173,7 @@ internal static class TexturedApp
                 uniformBuffers[slot].AsSpan<PerFrameCB>()[0] = cb;
 
                 using var cmdbuf = queue.CommandBuffer();
-                var passDesc = BuildRenderPassDesc(drawable.TextureHandle);
+                var passDesc = BuildRenderPassDesc(drawable.Texture);
 
                 using (var enc = cmdbuf.RenderCommandEncoder(passDesc))
                 {
@@ -246,7 +246,7 @@ internal static class TexturedApp
             StoreAction = (int)MTLStoreAction.Store,
             ClearColor = new WMTClearColor(0.15f, 0.18f, 0.22f, 1f),
         };
-        *(WMTRenderPassAttachment*)passDesc.ColorsRaw = att;
+        passDesc.SetColorAt(0, att);
         return passDesc;
     }
 }

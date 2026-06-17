@@ -45,7 +45,12 @@ public static class MetalShaderLoader
         byte[] data = File.ReadAllBytes(path);
         var lib = device.NewLibrary(data);
 
-        // 缓存（替换旧条目）
+        // 缓存（替换旧条目前先释放旧的，避免 SafeHandle 泄漏）
+        if (s_cache.TryGetValue(name, out var oldEntry) && !oldEntry.Library.IsInvalid)
+        {
+            // 注意：缓存的库可能被外部持有（通过 Retain），此处 Dispose 仅移除缓存自身的引用
+            oldEntry.Library.Dispose();
+        }
         s_cache[name] = (lib, path);
 
         // 返回时增加一次引用（调用方负责 Dispose）

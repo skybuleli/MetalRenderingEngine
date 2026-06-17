@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace MetalRenderingEngine.Metal.Interop;
@@ -48,16 +49,31 @@ public struct WMTColorAttachment
 }
 
 /// <summary>
+/// 8 个 WMTColorAttachment 的内联数组封装（.NET 10 InlineArray）。
+/// 内存布局与 C 端 <c>WMTColorAttachment[8]</c> 一致（8 × 36 = 288 字节）。
+/// </summary>
+[InlineArray(8)]
+public struct WMTColorAttachmentBuffer8
+{
+    private WMTColorAttachment _e0;
+}
+
+/// <summary>
 /// 渲染管线整体描述（C 端 <c>WMTRenderPipelineDesc</c>）。
+/// 使用 InlineArray 替代 fixed byte[]，提供安全的索引访问。
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct WMTRenderPipelineDesc
 {
-    public unsafe fixed byte ColorsRaw[8 * 36]; // 8 x WMTColorAttachment (36 bytes each)
+    /// <summary>8 个颜色附件的内联数组（0..ColorCount-1 有效）。</summary>
+    public WMTColorAttachmentBuffer8 Colors;
     public int ColorCount;
     public int DepthPixelFormat;
     public int StencilPixelFormat;
     public int SampleCount;
+
+    /// <summary>安全索引器：通过 ref 返回颜色附件。</summary>
+    public ref WMTColorAttachment this[int i] => ref Colors[i];
 }
 
 /// <summary>
@@ -85,14 +101,32 @@ public struct WMTRenderPassAttachment
 }
 
 /// <summary>
+/// 8 个 WMTRenderPassAttachment 的内联数组封装（.NET 10 InlineArray）。
+/// 内存布局与 C 端一致（8 × 40 = 320 字节）。
+/// </summary>
+[InlineArray(8)]
+public struct WMTRenderPassAttachmentBuffer8
+{
+    private WMTRenderPassAttachment _e0;
+}
+
+/// <summary>
 /// Render pass 整体描述（C 端 <c>WMTRenderPassDesc</c>）。
+/// 使用 InlineArray 替代 fixed byte[]，提供安全的访问器。
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct WMTRenderPassDesc
 {
-    public unsafe fixed byte ColorsRaw[8 * 40]; // 8 x WMTRenderPassAttachment
-    public unsafe fixed byte DepthRaw[40];
-    public unsafe fixed byte StencilRaw[40];
+    /// <summary>8 个颜色附件描述（通过 ColorAt/SetColorAt 安全访问）。</summary>
+    public WMTRenderPassAttachmentBuffer8 Colors;
+    public WMTRenderPassAttachment Depth;
+    public WMTRenderPassAttachment Stencil;
+
+    /// <summary>安全获取颜色附件。</summary>
+    public ref WMTRenderPassAttachment ColorAt(int i) => ref Colors[i];
+
+    /// <summary>安全设置颜色附件。</summary>
+    public void SetColorAt(int i, in WMTRenderPassAttachment attachment) => Colors[i] = attachment;
 }
 
 // ============================================================
