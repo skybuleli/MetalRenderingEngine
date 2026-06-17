@@ -20,6 +20,12 @@
       <Link>shaders/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- Phase 2：SDL3 dylib -->
+    <Content Include="/opt/homebrew/lib/libSDL3.dylib">
+      <Link>libSDL3.dylib</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+    </Content>
   </ItemGroup>
 
 </Project>
