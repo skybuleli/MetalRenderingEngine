@@ -99,4 +99,22 @@ public sealed class MetalDevice : MetalObject
         if (h == 0) throw new MetalException("MTLDevice newCommandQueue returned nil.");
         return new MetalCommandQueue(h);
     }
+
+    public MetalRenderPipelineState NewRenderPipelineState(MetalFunction vertex, MetalFunction fragment, in WMTRenderPipelineDesc desc)
+    {
+        ArgumentNullException.ThrowIfNull(vertex);
+        ArgumentNullException.ThrowIfNull(fragment);
+        unsafe
+        {
+            nuint err = 0;
+            WMTRenderPipelineDesc local = desc;
+            nuint pso = MetalBridge.MTLDevice_newRenderPipelineState(Handle, vertex.Handle, fragment.Handle, &local, &err);
+            if (pso == 0)
+            {
+                throw MetalException.FromError("MTLDevice newRenderPipelineStateWithDescriptor",
+                    new MetalError(err));
+            }
+            return new MetalRenderPipelineState(pso);
+        }
+    }
 }

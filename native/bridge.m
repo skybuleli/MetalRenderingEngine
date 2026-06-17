@@ -13,8 +13,11 @@
  */
 
 #import <Metal/Metal.h>
+#import <QuartzCore/QuartzCore.h>
+#import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 #import <CoreFoundation/CoreFoundation.h>
+#import <objc/message.h>
 #include "bridge.h"
 
 /* 把 mtl_handle_t 转回 ObjC id（不改变引用计数） */
@@ -280,4 +283,243 @@ void MTLComputeCommandEncoder_endEncoding(mtl_handle_t encoder) {
     if (encoder == MTL_NULL_HANDLE) return;
     id<MTLComputeCommandEncoder> e = H2ID(encoder);
     [e endEncoding];
+}
+
+/* ============================================================
+ *  MTLRenderPipelineState
+ * ============================================================ */
+
+mtl_handle_t MTLDevice_newRenderPipelineState(mtl_handle_t device,
+                                              mtl_handle_t vertex_func,
+                                              mtl_handle_t fragment_func,
+                                              const struct WMTRenderPipelineDesc *desc,
+                                              mtl_handle_t *err_out) {
+    if (err_out) *err_out = MTL_NULL_HANDLE;
+    if (device == MTL_NULL_HANDLE || vertex_func == MTL_NULL_HANDLE || fragment_func == MTL_NULL_HANDLE || desc == NULL)
+        return MTL_NULL_HANDLE;
+    id<MTLDevice> dev = H2ID(device);
+    id<MTLFunction> vert = H2ID(vertex_func);
+    id<MTLFunction> frag = H2ID(fragment_func);
+
+    MTLRenderPipelineDescriptor *pd = [[MTLRenderPipelineDescriptor alloc] init];
+    pd.vertexFunction = vert;
+    pd.fragmentFunction = frag;
+
+    for (int i = 0; i < desc->color_count && i < 8; i++) {
+        pd.colorAttachments[i].pixelFormat = (MTLPixelFormat)desc->colors[i].pixel_format;
+        pd.colorAttachments[i].writeMask = (MTLColorWriteMask)desc->colors[i].write_mask;
+    }
+    pd.depthAttachmentPixelFormat = (MTLPixelFormat)desc->depth_pixel_format;
+    pd.stencilAttachmentPixelFormat = (MTLPixelFormat)desc->stencil_pixel_format;
+    pd.rasterSampleCount = (NSUInteger)desc->sample_count;
+
+    NSError *err = nil;
+    id<MTLRenderPipelineState> pso = [dev newRenderPipelineStateWithDescriptor:pd error:&err];
+    if (!pso && err_out) *err_out = ID2H(err);
+    return pso ? ID2H(pso) : MTL_NULL_HANDLE;
+}
+
+/* ============================================================
+ *  MTLRenderCommandEncoder
+ * ============================================================ */
+
+mtl_handle_t MTLCommandBuffer_renderCommandEncoder(mtl_handle_t cmdbuf,
+                                                    const struct WMTRenderPassDesc *desc) {
+    if (cmdbuf == MTL_NULL_HANDLE || desc == NULL) return MTL_NULL_HANDLE;
+    id<MTLCommandBuffer> cb = H2ID(cmdbuf);
+
+    MTLRenderPassDescriptor *rpd = [MTLRenderPassDescriptor renderPassDescriptor];
+    for (int i = 0; i < 8; i++) {
+        if (desc->colors[i].texture != MTL_NULL_HANDLE) {
+            rpd.colorAttachments[i].texture = H2ID(desc->colors[i].texture);
+            rpd.colorAttachments[i].loadAction  = (MTLLoadAction)desc->colors[i].load_action;
+            rpd.colorAttachments[i].storeAction = (MTLStoreAction)desc->colors[i].store_action;
+            rpd.colorAttachments[i].clearColor = MTLClearColorMake(
+                desc->colors[i].clear_color.r,
+                desc->colors[i].clear_color.g,
+                desc->colors[i].clear_color.b,
+                desc->colors[i].clear_color.a);
+        }
+    }
+    if (desc->depth.texture != MTL_NULL_HANDLE) {
+        rpd.depthAttachment.texture = H2ID(desc->depth.texture);
+    }
+    if (desc->stencil.texture != MTL_NULL_HANDLE) {
+        rpd.stencilAttachment.texture = H2ID(desc->stencil.texture);
+    }
+
+    id<MTLRenderCommandEncoder> enc = [cb renderCommandEncoderWithDescriptor:rpd];
+    return enc ? (mtl_handle_t)(uintptr_t)CFBridgingRetain(enc) : MTL_NULL_HANDLE;
+}
+
+void MTLRenderCommandEncoder_setRenderPipelineState(mtl_handle_t encoder, mtl_handle_t pso) {
+    if (encoder == MTL_NULL_HANDLE || pso == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    [e setRenderPipelineState:H2ID(pso)];
+}
+
+void MTLRenderCommandEncoder_setVertexBuffer(mtl_handle_t encoder, mtl_handle_t buffer,
+                                              uint64_t offset, uint64_t index) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    [e setVertexBuffer:H2ID(buffer) offset:(NSUInteger)offset atIndex:(NSUInteger)index];
+}
+
+void MTLRenderCommandEncoder_setViewport(mtl_handle_t encoder,
+                                          float x, float y, float w, float h,
+                                          float znear, float zfar) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    MTLViewport vp = { x, y, w, h, znear, zfar };
+    [e setViewport:vp];
+}
+
+void MTLRenderCommandEncoder_setScissorRect(mtl_handle_t encoder,
+                                             int x, int y, int w, int h) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    MTLScissorRect scissor = { (NSUInteger)x, (NSUInteger)y, (NSUInteger)w, (NSUInteger)h };
+    [e setScissorRect:scissor];
+}
+
+void MTLRenderCommandEncoder_drawPrimitives(mtl_handle_t encoder,
+                                             int primitive_type,
+                                             uint64_t vertex_start,
+                                             uint64_t vertex_count) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    MTLPrimitiveType pt = (primitive_type == 0) ? MTLPrimitiveTypeTriangle : MTLPrimitiveTypeTriangle;
+    [e drawPrimitives:pt vertexStart:(NSUInteger)vertex_start vertexCount:(NSUInteger)vertex_count];
+}
+
+void MTLRenderCommandEncoder_endEncoding(mtl_handle_t encoder) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    [e endEncoding];
+}
+
+/* ============================================================
+ *  CAMetalLayer / CAMetalDrawable
+ * ============================================================ */
+
+mtl_handle_t CAMetalLayer_fromView(mtl_handle_t view) {
+    if (view == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
+    NSView *nsView = H2ID(view);
+    /* 确保 view 有 wantsLayer 并附加 CAMetalLayer */
+    nsView.wantsLayer = YES;
+    CAMetalLayer *layer = [CAMetalLayer layer];
+    nsView.layer = layer;
+    return ID2H(layer);
+}
+
+void CAMetalLayer_setDevice(mtl_handle_t layer, mtl_handle_t device) {
+    if (layer == MTL_NULL_HANDLE || device == MTL_NULL_HANDLE) return;
+    CAMetalLayer *ml = H2ID(layer);
+    ml.device = H2ID(device);
+}
+
+void CAMetalLayer_setPixelFormat(mtl_handle_t layer, int pixel_format) {
+    if (layer == MTL_NULL_HANDLE) return;
+    CAMetalLayer *ml = H2ID(layer);
+    ml.pixelFormat = (MTLPixelFormat)pixel_format;
+}
+
+void CAMetalLayer_setDrawableSize(mtl_handle_t layer, float width, float height) {
+    if (layer == MTL_NULL_HANDLE) return;
+    CAMetalLayer *ml = H2ID(layer);
+    ml.drawableSize = CGSizeMake(width, height);
+}
+
+mtl_handle_t CAMetalLayer_nextDrawable(mtl_handle_t layer) {
+    if (layer == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
+    CAMetalLayer *ml = H2ID(layer);
+    id<CAMetalDrawable> drawable = [ml nextDrawable];
+    return drawable ? (mtl_handle_t)(uintptr_t)CFBridgingRetain(drawable) : MTL_NULL_HANDLE;
+}
+
+mtl_handle_t CAMetalDrawable_texture(mtl_handle_t drawable) {
+    if (drawable == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
+    id<CAMetalDrawable> d = H2ID(drawable);
+    id<MTLTexture> tex = d.texture;
+    return tex ? (mtl_handle_t)(uintptr_t)CFBridgingRetain(tex) : MTL_NULL_HANDLE;
+}
+
+void MTLCommandBuffer_presentDrawable(mtl_handle_t cmdbuf, mtl_handle_t drawable) {
+    if (cmdbuf == MTL_NULL_HANDLE || drawable == MTL_NULL_HANDLE) return;
+    id<MTLCommandBuffer> cb = H2ID(cmdbuf);
+    id<CAMetalDrawable> d = H2ID(drawable);
+    [cb presentDrawable:d];
+}
+
+mtl_handle_t Cocoa_CreateMetalWindow(const char *title, float width, float height, mtl_handle_t *out_layer) {
+    if (out_layer) *out_layer = MTL_NULL_HANDLE;
+    NSRect frame = NSMakeRect(0, 0, width, height);
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:frame
+                                                   styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable)
+                                                     backing:NSBackingStoreBuffered
+                                                       defer:NO];
+    [window setTitle:[[NSString alloc] initWithUTF8String:title ? title : "Metal"]];
+    [window center];
+    [window makeKeyAndOrderFront:nil];
+
+    NSView *view = [window contentView];
+    view.wantsLayer = YES;
+    CAMetalLayer *layer = [CAMetalLayer layer];
+    view.layer = layer;
+
+    if (out_layer) *out_layer = ID2H(layer);
+    return ID2H(window);
+}
+
+/* 轮询一次 Cocoa 事件队列；返回 0 表示窗口仍打开，1 表示用户请求关闭（按 ESC 或关窗） */
+int Cocoa_PollEvents(void) {
+    NSEvent *event = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                        untilDate:[NSDate distantPast]
+                                           inMode:NSDefaultRunLoopMode
+                                          dequeue:YES];
+    if (event) {
+        if ([event type] == NSEventTypeKeyDown) {
+            NSString *chars = [event characters];
+            if ([chars length] > 0 && [chars characterAtIndex:0] == 27) { // ESC
+                return 1;
+            }
+        }
+        [NSApp sendEvent:event];
+    }
+    return 0;
+}
+
+/* ============================================================
+ *  MTLTexture（只读回读）
+ * ============================================================ */
+
+uint64_t MTLTexture_width(mtl_handle_t texture) {
+    if (texture == MTL_NULL_HANDLE) return 0;
+    id<MTLTexture> tex = H2ID(texture);
+    return (uint64_t)tex.width;
+}
+
+uint64_t MTLTexture_height(mtl_handle_t texture) {
+    if (texture == MTL_NULL_HANDLE) return 0;
+    id<MTLTexture> tex = H2ID(texture);
+    return (uint64_t)tex.height;
+}
+
+uint64_t MTLTexture_bytesPerRow(mtl_handle_t texture, uint64_t mip_level) {
+    if (texture == MTL_NULL_HANDLE) return 0;
+    id tex = H2ID(texture);
+    return (uint64_t)((NSUInteger (*)(id, SEL))objc_msgSend)(tex, @selector(bytesPerRow));
+}
+
+uint64_t MTLTexture_getBytes(mtl_handle_t texture, void *dst, uint64_t dst_size, uint64_t mip_level) {
+    if (texture == MTL_NULL_HANDLE || dst == NULL || dst_size == 0) return 0;
+    id tex = H2ID(texture);
+    NSUInteger width = (NSUInteger)[(id<MTLTexture>)tex width];
+    NSUInteger height = (NSUInteger)[(id<MTLTexture>)tex height];
+    NSUInteger bytesPerRow = (NSUInteger)((NSUInteger (*)(id, SEL))objc_msgSend)(tex, @selector(bytesPerRow));
+    NSUInteger requiredSize = bytesPerRow * height;
+    if (dst_size < requiredSize) return 0;
+    MTLRegion region = MTLRegionMake2D(0, 0, width, height);
+    [tex getBytes:dst bytesPerRow:bytesPerRow fromRegion:region mipmapLevel:(NSUInteger)mip_level];
+    return (uint64_t)requiredSize;
 }

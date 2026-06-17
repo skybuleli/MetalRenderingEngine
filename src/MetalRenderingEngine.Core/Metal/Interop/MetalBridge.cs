@@ -136,4 +136,80 @@ internal static partial class MetalBridge
 
     [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_endEncoding")]
     public static partial void MTLComputeCommandEncoder_endEncoding(nuint encoder);
+
+    // ============================================================
+    //  MTLRenderPipelineState
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newRenderPipelineState")]
+    public static unsafe partial nuint MTLDevice_newRenderPipelineState(nuint device, nuint vertex_func, nuint fragment_func, WMTRenderPipelineDesc* desc, nuint* err_out);
+
+    // ============================================================
+    //  MTLRenderCommandEncoder
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_renderCommandEncoder")]
+    public static unsafe partial nuint MTLCommandBuffer_renderCommandEncoder(nuint cmdbuf, WMTRenderPassDesc* desc);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setRenderPipelineState")]
+    public static partial void MTLRenderCommandEncoder_setRenderPipelineState(nuint encoder, nuint pso);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setVertexBuffer")]
+    public static partial void MTLRenderCommandEncoder_setVertexBuffer(nuint encoder, nuint buffer, ulong offset, ulong index);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setViewport")]
+    public static partial void MTLRenderCommandEncoder_setViewport(nuint encoder, float x, float y, float w, float h, float znear, float zfar);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setScissorRect")]
+    public static partial void MTLRenderCommandEncoder_setScissorRect(nuint encoder, int x, int y, int w, int h);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_drawPrimitives")]
+    public static partial void MTLRenderCommandEncoder_drawPrimitives(nuint encoder, int primitive_type, ulong vertex_start, ulong vertex_count);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_endEncoding")]
+    public static partial void MTLRenderCommandEncoder_endEncoding(nuint encoder);
+
+    // ============================================================
+    //  CAMetalLayer / CAMetalDrawable
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "Cocoa_CreateMetalWindow", StringMarshalling = StringMarshalling.Utf8)]
+    public static unsafe partial nuint Cocoa_CreateMetalWindow(string title, float width, float height, nuint* out_layer);
+
+    [LibraryImport(LibraryName, EntryPoint = "CAMetalLayer_setDevice")]
+    public static partial void CAMetalLayer_setDevice(nuint layer, nuint device);
+
+    [LibraryImport(LibraryName, EntryPoint = "CAMetalLayer_setPixelFormat")]
+    public static partial void CAMetalLayer_setPixelFormat(nuint layer, int pixel_format);
+
+    [LibraryImport(LibraryName, EntryPoint = "CAMetalLayer_setDrawableSize")]
+    public static partial void CAMetalLayer_setDrawableSize(nuint layer, float width, float height);
+
+    [LibraryImport(LibraryName, EntryPoint = "CAMetalLayer_nextDrawable")]
+    public static partial nuint CAMetalLayer_nextDrawable(nuint layer);
+
+    [LibraryImport(LibraryName, EntryPoint = "CAMetalDrawable_texture")]
+    public static partial nuint CAMetalDrawable_texture(nuint drawable);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_presentDrawable")]
+    public static partial void MTLCommandBuffer_presentDrawable(nuint cmdbuf, nuint drawable);
+
+    [LibraryImport(LibraryName, EntryPoint = "Cocoa_PollEvents")]
+    public static partial int Cocoa_PollEvents();
+
+    // ============================================================
+    //  MTLTexture（只读回读）
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLTexture_width")]
+    public static partial ulong MTLTexture_width(nuint texture);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLTexture_height")]
+    public static partial ulong MTLTexture_height(nuint texture);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLTexture_bytesPerRow")]
+    public static partial ulong MTLTexture_bytesPerRow(nuint texture, ulong mip_level);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLTexture_getBytes")]
+    public static unsafe partial ulong MTLTexture_getBytes(nuint texture, void* dst, ulong dst_size, ulong mip_level);
 }
