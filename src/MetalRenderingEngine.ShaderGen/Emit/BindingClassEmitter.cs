@@ -89,23 +89,39 @@ internal static class BindingClassEmitter
         {
             sb.AppendLine();
             sb.AppendLine("    /// <summary>派发计算任务。</summary>");
+            sb.AppendLine("    /// <param name=\"argumentTableIndex\">MSC top-level argument table 所在的 buffer 槽位（MSC 4.0 为 2）。</param>");
             sb.AppendLine("    public void Dispatch(");
             sb.AppendLine("        MetalRenderingEngine.Metal.MetalCommandBuffer cmdBuffer,");
-            sb.AppendLine("        int threadgroupsX, int threadgroupsY, int threadgroupsZ)");
+            sb.AppendLine("        int threadgroupsX, int threadgroupsY, int threadgroupsZ,");
+            sb.AppendLine("        ulong argumentTableIndex = 2)");
             sb.AppendLine("    {");
             sb.AppendLine("        using var encoder = cmdBuffer.ComputeCommandEncoder();");
             sb.AppendLine("        encoder.SetComputePipelineState(_pipeline);");
             sb.AppendLine();
 
-            // 绑定 buffer 资源（按槽位顺序）
+            // 绑定 buffer 资源：MSC 4.0 通过 top-level argument table（buffer(2)）间接访问。
+            // 每个资源先 UseResource 声明访问，再用 SetBytes 写入 UavDescriptor（gpuAddress/length/stride）。
+            // 与 ComputeShaderDemo / MandelbrotDemo 中验证过的模式一致。
             var orderedFields = bufferFields
                 .Select(f => (Field: f, Slot: resourceSlots.TryGetValue(f.Name, out var s) ? s : -1))
                 .Where(x => x.Slot >= 0)
                 .OrderBy(x => x.Slot);
             foreach (var (field, slot) in orderedFields)
             {
+                var stride = GetElementStride(field.GenericArgument);
+                var usage = field.Kind == ResourceKind.ReadWriteBuffer
+                    ? "MTLResourceUsage.Read | MTLResourceUsage.Write"
+                    : "MTLResourceUsage.Read";
                 sb.AppendLine($"        if (_{field.Name} is not null)");
-                sb.AppendLine($"            encoder.SetBuffer(_{field.Name}!, 0, {slot});");
+                sb.AppendLine($"        {{");
+                sb.AppendLine($"            encoder.UseResource(_{field.Name}!, {usage});");
+                sb.AppendLine($"            encoder.SetBytes(new MetalRenderingEngine.Metal.Interop.UavDescriptor");
+                sb.AppendLine($"            {{");
+                sb.AppendLine($"                GpuAddress = _{field.Name}!.GpuAddress,");
+                sb.AppendLine($"                Length = _{field.Name}!.Length,");
+                sb.AppendLine($"                Stride = {stride},");
+                sb.AppendLine($"            }}, argumentTableIndex);");
+                sb.AppendLine($"        }}");
             }
 
             // CB 绑定
@@ -169,5 +185,31 @@ internal static class BindingClassEmitter
                 slots[field.Name] = slot;
         }
         return slots;
+    }
+
+    /// <summary>
+    /// 根据 buffer 元素类型名推算元素字节大小（用于 UavDescriptor.Stride）。
+    /// 与 MetalRenderingEngine.Shader 中向量类型的 [StructLayout] 布局对齐。
+    /// </summary>
+    private static int GetElementStride(string? genericArg)
+    {
+        return genericArg switch
+        {
+            "float" or "System.Single" => 4,
+            "int" or "System.Int32" => 4,
+            "uint" or "System.UInt32" => 4,
+            "bool" or "System.Boolean" => 1,
+            "double" or "System.Double" => 8,
+            "float2" or "MetalRenderingEngine.Shader.float2" => 8,
+            "int2" or "MetalRenderingEngine.Shader.int2" => 8,
+            "float3" or "MetalRenderingEngine.Shader.float3" => 12,
+            "int3" or "MetalRenderingEngine.Shader.int3" => 12,
+            "uint3" or "MetalRenderingEngine.Shader.uint3" => 12,
+            "float4" or "MetalRenderingEngine.Shader.float4" => 16,
+            "int4" or "MetalRenderingEngine.Shader.int4" => 16,
+            "float4x4" or "MetalRenderingEngine.Shader.float4x4" => 64,
+            null or "" => 4, // 默认假设 4 字节
+            _ => 4, // 未知类型保守用 4；用户可后续扩展映射表
+        };
     }
 }

@@ -81,8 +81,18 @@ internal sealed class ShaderInfo : IEquatable<ShaderInfo>
         {
             int hash = 17;
             hash = hash * 31 + (StructName?.GetHashCode() ?? 0);
+            hash = hash * 31 + (Namespace?.GetHashCode() ?? 0);
             hash = hash * 31 + Kind.GetHashCode();
+            hash = hash * 31 + ThreadGroupX.GetHashCode();
+            hash = hash * 31 + ThreadGroupY.GetHashCode();
+            hash = hash * 31 + ThreadGroupZ.GetHashCode();
             hash = hash * 31 + (ExecuteMethodBody?.GetHashCode() ?? 0);
+            hash = hash * 31 + (InputTypeName?.GetHashCode() ?? 0);
+            hash = hash * 31 + (OutputTypeName?.GetHashCode() ?? 0);
+            // Fields 列表用 count + 各元素 hash 聚合，与 Equals 保持一致
+            hash = hash * 31 + Fields.Count.GetHashCode();
+            foreach (var f in Fields)
+                hash = hash * 31 + (f?.GetHashCode() ?? 0);
             return hash;
         }
     }

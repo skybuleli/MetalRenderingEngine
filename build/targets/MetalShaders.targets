@@ -7,7 +7,10 @@
   -->
 
   <PropertyGroup>
-    <GeneratedShaderDir>$(IntermediateOutputPath)Generated/MetalRenderingEngine.ShaderGen/MetalRenderingEngine.ShaderGen.ShaderGenerator</GeneratedShaderDir>
+    <!-- CompilerGeneratedFilesOutputPath 在各项目 csproj 中设为 obj/Generated（非 IntermediateOutputPath），
+         故生成文件落在 obj/Generated/<GeneratorName>/，而非 obj/<Config>/<TFM>/Generated/...。
+         此处必须与 csproj 的设置保持一致，否则 Exists() 为 false、target 永不执行。 -->
+    <GeneratedShaderDir>$(CompilerGeneratedFilesOutputPath)/MetalRenderingEngine.ShaderGen/MetalRenderingEngine.ShaderGen.ShaderGenerator</GeneratedShaderDir>
     <ShaderOutputDir>$(IntermediateOutputPath)shaders</ShaderOutputDir>
     <CompileGeneratedShadersScript>$(MSBuildThisFileDirectory)../compile_generated_shaders.sh</CompileGeneratedShadersScript>
   </PropertyGroup>

@@ -87,6 +87,14 @@ internal static class ShaderDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor VertexFragmentSameInOutType = new(
+        id: "MSGEN022",
+        title: "Vertex/Fragment 的输入输出类型不应相同",
+        messageFormat: "{0} 着色器 '{1}' 的输入输出类型均为 '{2}'。源生成器会为同名 In/Out 加 _Input/_Output 后缀以区分语义，但不会改写方法体内的类型引用（如 new T()），导致生成的 Slang 引用未定义类型。请为输出使用不同的类型名。",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     // ---- 资源字段错误（030-039）----
 
     public static readonly DiagnosticDescriptor InvalidResourceFieldType = new(

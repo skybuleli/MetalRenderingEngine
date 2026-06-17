@@ -26,6 +26,7 @@ while IFS= read -r -d '' genfile; do
 
     # 从生成的 C# const 类中提取 Slang 源代码
     # 查找 Source = @"..." 模式
+    # 注意：C# verbatim string 中 "" 表示一个字面 " 字符，提取时必须还原为单个 "
     awk '
     /Source = @"/ { in_source = 1; next }
     in_source {
@@ -34,6 +35,7 @@ while IFS= read -r -d '' genfile; do
         } else {
             gsub(/^    /, "")
             sub(/"$/, "")
+            gsub(/""/, "\"")   # 还原 verbatim string 的双引号转义
             print
         }
     }' "$genfile" > "$slang_file"

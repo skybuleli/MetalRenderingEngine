@@ -90,13 +90,18 @@ internal static class MandelbrotDemo
             float zoomAmp = 0.6f;                // 缩放呼吸幅度（相对值）
             float zoomFreq = 0.25f;              // 缩放呼吸频率（Hz）
             float driftX = 0.0f, driftY = 0.0f;  // 中心点漂移幅度（复平面单位）
-            float driftFreq = 0.07f;             // 中心漂移频率
+            float driftFreqX = 0.07f;            // X 方向漂移频率
+            float driftFreqY = 0.11f;            // Y 方向漂移频率（与 X 不同形成李萨如轨迹）
             int baseMaxIter = 128;
             int iterAmp = 96;                    // 迭代次数呼吸幅度
-            float iterFreq = 0.12f;              // 迭代呼吸频率
+            float iterFreq = 0.12f;              // 迭代呼吸频率（独立于缩放）
             float centerX0 = -0.5f, centerY0 = 0.0f;
             bool animate = true;
             bool showDemo = false;
+
+            // 帧缓存：参数不变时跳过 compute dispatch（静态画面不重算）
+            float prevCx = float.NaN, prevCy = float.NaN, prevScale = float.NaN;
+            int prevMaxIter = -1;
 
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             long startTime = stopwatch.ElapsedMilliseconds;
@@ -152,9 +157,10 @@ internal static class MandelbrotDemo
                     ImGui.SliderFloat("zoom freq", ref zoomFreq, 0.0f, 2.0f);
                     ImGui.Separator();
                     ImGui.Text("Center Drift");
-                    ImGui.SliderFloat("drift X",    ref driftX,   -1.0f, 1.0f);
-                    ImGui.SliderFloat("drift Y",    ref driftY,   -1.0f, 1.0f);
-                    ImGui.SliderFloat("drift freq", ref driftFreq, 0.0f, 1.0f);
+                    ImGui.SliderFloat("drift X",        ref driftX,       -1.0f, 1.0f);
+                    ImGui.SliderFloat("drift Y",        ref driftY,       -1.0f, 1.0f);
+                    ImGui.SliderFloat("drift freq X",   ref driftFreqX,    0.0f, 1.0f);
+                    ImGui.SliderFloat("drift freq Y",   ref driftFreqY,    0.0f, 1.0f);
                     ImGui.Separator();
                     ImGui.Text("Iteration Breathing");
                     ImGui.SliderInt("iter base",  ref baseMaxIter, 16, 512);
@@ -178,17 +184,23 @@ internal static class MandelbrotDemo
                     int maxIter = baseMaxIter;
                     if (animate)
                     {
-                        // 缩放：用指数呼吸，让 zoom-in 看起来更剧烈
+                        // 缩放：用平滑相位，让 zoom-in 看起来更剧烈
                         float zoomPhase = 0.5f * (1.0f - MathF.Cos(t * zoomFreq * 2.0f * MathF.PI)); // 0..1
                         scale = baseScale * (1.0f - zoomAmp * zoomPhase);
 
-                        // 中心漂移：李萨如轨迹
-                        cx = centerX0 + driftX * MathF.Sin(t * driftFreq * 2.0f * MathF.PI);
-                        cy = centerY0 + driftY * MathF.Sin(t * driftFreq * 2.0f * MathF.PI * 1.0f);
+                        // 中心漂移：X/Y 不同频率形成李萨如封闭轨迹
+                        cx = centerX0 + driftX * MathF.Sin(t * driftFreqX * 2.0f * MathF.PI);
+                        cy = centerY0 + driftY * MathF.Sin(t * driftFreqY * 2.0f * MathF.PI);
 
-                        // 迭代呼吸：缩放越深迭代越多
-                        maxIter = baseMaxIter + (int)(iterAmp * zoomPhase);
+                        // 迭代呼吸：独立频率，与缩放解耦
+                        float iterPhase = 0.5f * (1.0f - MathF.Cos(t * iterFreq * 2.0f * MathF.PI));
+                        maxIter = baseMaxIter + (int)(iterAmp * iterPhase);
                     }
+
+                    // 帧缓存：参数未变时跳过 compute dispatch（静态画面不重算，省 GPU）
+                    bool paramsChanged = cx != prevCx || cy != prevCy
+                        || scale != prevScale || maxIter != prevMaxIter;
+                    prevCx = cx; prevCy = cy; prevScale = scale; prevMaxIter = maxIter;
 
                     // 写参数到 Output[0]
                     Span<float4> data = buffer.AsSpan<float4>();
@@ -197,9 +209,10 @@ internal static class MandelbrotDemo
                     // ── 提交 GPU 工作 ───────────────────────────
                     using var cmdbuf = queue.CommandBuffer();
 
-                    // Compute pass：每帧重算 Mandelbrot 像素
-                    using (var cEnc = cmdbuf.ComputeCommandEncoder())
+                    // Compute pass：仅当参数变化时才重算 Mandelbrot 像素（静态帧缓存）
+                    if (paramsChanged)
                     {
+                        using var cEnc = cmdbuf.ComputeCommandEncoder();
                         cEnc.SetComputePipelineState(computePso);
                         cEnc.UseResource(buffer, MTLResourceUsage.Read | MTLResourceUsage.Write);
 

@@ -118,6 +118,20 @@ public sealed class ShaderGenerator : IIncrementalGenerator
         var inputTypeStr = inputTypeSym?.ToDisplayString() ?? "";
         var outputTypeStr = outputTypeSym?.ToDisplayString() ?? "";
 
+        // Vertex/Fragment 输入输出类型相同时报警告：
+        // 源生成器会加 _Input/_Output 后缀，但不会改写方法体内的类型引用。
+        if (shaderKind is ShaderKind.Vertex or ShaderKind.Fragment
+            && inputTypeSym is not null
+            && SymbolEqualityComparer.Default.Equals(inputTypeSym, outputTypeSym))
+        {
+            diagnostics.Add(Diagnostic.Create(
+                ShaderDiagnostics.VertexFragmentSameInOutType,
+                structDecl.Identifier.GetLocation(),
+                shaderKind.Value.ToString(),
+                typeSymbol.Name,
+                inputTypeSym.Name));
+        }
+
         var info = new ShaderInfo
         {
             StructName = typeSymbol.Name,

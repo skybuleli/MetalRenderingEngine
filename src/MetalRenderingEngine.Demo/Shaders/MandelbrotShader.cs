@@ -3,8 +3,10 @@ using MetalRenderingEngine.Shader;
 namespace MetalRenderingEngine.Demo.Shaders;
 
 /// <summary>
-/// Mandelbrot 集合计算着色器。
-/// 每个线程计算一个像素的迭代次数并映射为颜色。
+/// Mandelbrot 集合计算着色器（源生成器版）。
+/// 与 <c>src/MetalRenderingEngine.Shaders/Compute/Mandelbrot.slang</c>（手写版）布局严格一致：
+/// 单 buffer 方案 —— Output[0] = float4(cx, cy, scale, maxIter)，Output[1..] = 像素颜色。
+/// 二维 dispatch：每个线程处理 (id.x, id.y) 对应的一个像素。
 /// </summary>
 [Shader]
 [ThreadGroupSize(16, 16, 1)]
@@ -12,23 +14,27 @@ namespace MetalRenderingEngine.Demo.Shaders;
 partial struct MandelbrotShader : IComputeShader
 {
     public ReadWriteBuffer<float4> Output;
-    public ReadOnlyBuffer<float4> Constants;
 
     public void Execute(ThreadId id)
     {
-        var index = (int)id.DispatchThreadID.X;
-        var cx = Constants[0].X;
-        var cy = Constants[0].Y;
-        var scale = Constants[0].Z;
-        var maxIter = (int)Constants[0].W;
-
         var width = 1024;
-        var x = index % width;
-        var y = index / width;
+        var height = 768;
+        var x = (int)id.DispatchThreadID.X;
+        var y = (int)id.DispatchThreadID.Y;
+
+        // +1 跳过 Output[0] 参数槽
+        var index = y * width + x + 1;
+        if (index - 1 >= width * height)
+            return;
+
+        var cx = Output[0].X;
+        var cy = Output[0].Y;
+        var scale = Output[0].Z;
+        var maxIter = (int)Output[0].W;
 
         var c = new float2(
             (x - width / 2.0f) * scale + cx,
-            (y - width / 2.0f) * scale + cy
+            (y - height / 2.0f) * scale + cy
         );
 
         var z = new float2(0.0f, 0.0f);
