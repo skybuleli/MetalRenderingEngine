@@ -31,6 +31,7 @@ public struct WMTSize
 
 /// <summary>
 /// 渲染管线颜色附件描述（C 端 <c>WMTColorAttachment</c>）。
+/// Phase 3.5 新增 blend 字段：36 字节 = 9 int。
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct WMTColorAttachment
@@ -38,6 +39,12 @@ public struct WMTColorAttachment
     public int PixelFormat;
     public int WriteMask;
     public int BlendingEnabled;
+    public int SrcRgbBlendFactor;
+    public int DstRgbBlendFactor;
+    public int SrcAlphaBlendFactor;
+    public int DstAlphaBlendFactor;
+    public int RgbBlendOp;
+    public int AlphaBlendOp;
 }
 
 /// <summary>
@@ -46,7 +53,7 @@ public struct WMTColorAttachment
 [StructLayout(LayoutKind.Sequential)]
 public struct WMTRenderPipelineDesc
 {
-    public unsafe fixed byte ColorsRaw[8 * 12]; // 8 x WMTColorAttachment
+    public unsafe fixed byte ColorsRaw[8 * 36]; // 8 x WMTColorAttachment (36 bytes each)
     public int ColorCount;
     public int DepthPixelFormat;
     public int StencilPixelFormat;
@@ -138,4 +145,20 @@ public struct WMTOrigin
     public ulong Z;
 
     public WMTOrigin(ulong x, ulong y, ulong z) { X = x; Y = y; Z = z; }
+}
+
+// ============================================================
+// Phase 3.5: MSC Argument Buffer 描述符
+// ============================================================
+
+/// <summary>
+/// MSC 4.0 的 argument buffer 中 UAV/SRV/CBV 描述符（24 字节）。
+/// 字段顺序与 reflection JSON 的 TopLevelArgumentBuffer 描述对齐。
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct UavDescriptor
+{
+    public ulong GpuAddress;
+    public ulong Length;
+    public ulong Stride;
 }

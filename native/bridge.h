@@ -65,6 +65,31 @@ struct WMTSize {
 };
 
 /* ============================================================
+ *  Blend State（Phase 3.5 新增）
+ * ============================================================ */
+
+enum WMTBlendFactor {
+    WMTBlendFactorZero                     = 0,
+    WMTBlendFactorOne                      = 1,
+    WMTBlendFactorSourceColor              = 2,
+    WMTBlendFactorOneMinusSourceColor      = 3,
+    WMTBlendFactorSourceAlpha              = 4,
+    WMTBlendFactorOneMinusSourceAlpha      = 5,
+    WMTBlendFactorDestinationAlpha         = 6,
+    WMTBlendFactorOneMinusDestinationAlpha = 7,
+    WMTBlendFactorDestinationColor         = 8,
+    WMTBlendFactorOneMinusDestinationColor = 9,
+};
+
+enum WMTBlendOperation {
+    WMTBlendOperationAdd              = 0,
+    WMTBlendOperationSubtract         = 1,
+    WMTBlendOperationReverseSubtract  = 2,
+    WMTBlendOperationMin              = 3,
+    WMTBlendOperationMax              = 4,
+};
+
+/* ============================================================
  *  引用计数（对应 NSObject -retain / -release）
  * ============================================================ */
 
@@ -181,17 +206,24 @@ void MTLComputeCommandEncoder_endEncoding(mtl_handle_t encoder);
 /* 关键像素格式（与 MTLPixelFormat 原始值对齐） */
 enum WMTPixelFormat {
     WMTPixelFormatInvalid      = 0,
-    WMTPixelFormatBGRA8Unorm   = 80,
+    WMTPixelFormatR8Unorm      = 10,     /* Phase 3.5: ImGui font atlas */
     WMTPixelFormatRGBA8Unorm   = 70,
+    WMTPixelFormatBGRA8Unorm   = 80,
     WMTPixelFormatRGBA32Float  = 125,
     WMTPixelFormatDepth32Float = 252,
 };
 
-/* 颜色附件描述（简化版，Phase 2 只需 pixelFormat） */
+/* 颜色附件描述（Phase 2 基础 + Phase 3.5 blend 扩展） */
 struct WMTColorAttachment {
-    int pixel_format;    /* WMTPixelFormat */
-    int write_mask;      /* 默认 0xF（RGBA 全写） */
-    int blending_enabled;
+    int pixel_format;       /* WMTPixelFormat */
+    int write_mask;         /* 默认 0xF（RGBA 全写） */
+    int blending_enabled;   /* 0=禁用, 1=启用 */
+    int src_rgb_blend_factor;   /* WMTBlendFactor */
+    int dst_rgb_blend_factor;   /* WMTBlendFactor */
+    int src_alpha_blend_factor; /* WMTBlendFactor */
+    int dst_alpha_blend_factor; /* WMTBlendFactor */
+    int rgb_blend_op;           /* WMTBlendOperation */
+    int alpha_blend_op;         /* WMTBlendOperation */
 };
 
 struct WMTRenderPipelineDesc {
@@ -258,6 +290,13 @@ void MTLRenderCommandEncoder_drawPrimitives(mtl_handle_t encoder,
                                              int primitive_type,   /* 0=triangle */
                                              uint64_t vertex_start,
                                              uint64_t vertex_count);
+
+void MTLRenderCommandEncoder_drawIndexedPrimitives(mtl_handle_t encoder,
+                                                    int primitive_type,      /* 0=triangle */
+                                                    uint64_t index_count,
+                                                    int index_type,          /* 0=uint16, 1=uint32 */
+                                                    mtl_handle_t index_buffer,
+                                                    uint64_t index_buffer_offset);
 void MTLRenderCommandEncoder_endEncoding(mtl_handle_t encoder);
 
 /* ============================================================
@@ -285,6 +324,14 @@ void MTLCommandBuffer_presentDrawable(mtl_handle_t cmdbuf, mtl_handle_t drawable
 
 /* 轮询一次 Cocoa 事件队列；返回 0 = 窗口仍打开，1 = 用户请求关闭 */
 int Cocoa_PollEvents(void);
+
+/* 获取 window 的 contentView（NSView*），用于传给 ImGuiImplOSX.Init。
+ * 返回的句柄不增加引用计数（view 由 window 持有）。 */
+mtl_handle_t Cocoa_WindowContentView(mtl_handle_t window);
+
+/* 获取 view 的 drawable 尺寸（像素，已考虑 HiDPI），
+ * *out_width / *out_height 由调用方提供指针。 */
+void Cocoa_ViewDrawableSize(mtl_handle_t view, float *out_width, float *out_height);
 
 /* ============================================================
  *  MTLTexture（只读回读）
@@ -421,6 +468,36 @@ void MTLRenderCommandEncoder_setFragmentSamplerState(mtl_handle_t encoder, mtl_h
 void MTLRenderCommandEncoder_useResource(mtl_handle_t encoder, mtl_handle_t resource, uint32_t usage, uint32_t stages);
 void MTLRenderCommandEncoder_waitForFence(mtl_handle_t encoder, mtl_handle_t fence, uint32_t before_stages);
 void MTLRenderCommandEncoder_updateFence(mtl_handle_t encoder, mtl_handle_t fence, uint32_t after_stages);
+
+/* ============================================================
+ *  Phase 3.5: MTLArgumentEncoder
+ *  MSC 4.0 把 texture/sampler 也放进 buffer(2) argument buffer，
+ *  无法用 setFragmentTexture 直接绑定，必须用 ArgumentEncoder 编码。
+ * ============================================================ */
+
+/* 从 MTLFunction 的指定 buffer index 创建 argument encoder（retained） */
+mtl_handle_t MTLFunction_newArgumentEncoder(mtl_handle_t function, uint64_t buffer_index);
+
+/* argument encoder 编码后的总字节数 */
+uint64_t MTLArgumentEncoder_encodedLength(mtl_handle_t encoder);
+
+/* 将 texture[0] + sampler[0] 编码到 argument buffer 的指定 offset。
+ * 调用前 arg_buffer 已分配；encoder 内部按 Metal argument buffer 规范布局。 */
+void MTLArgumentEncoder_encodeTextureSampler(mtl_handle_t encoder,
+                                              mtl_handle_t arg_buffer,
+                                              uint64_t offset,
+                                              mtl_handle_t texture,
+                                              mtl_handle_t sampler);
+
+/* ============================================================
+ *  Phase 3.5: MTLRenderPassDescriptor (for Hexa.NET.ImGui Backends)
+ * ============================================================ */
+
+/* 为指定纹理创建一个 MTLRenderPassDescriptor（单 color attachment）。
+ * loadAction=Load, storeAction=Store，用于 ImGui 叠加渲染。
+ * 调用方负责用 MTLRenderPassDescriptor_release 释放。 */
+mtl_handle_t MTLRenderPassDescriptor_createForTexture(mtl_handle_t texture);
+void MTLRenderPassDescriptor_release(mtl_handle_t desc);
 
 #ifdef __cplusplus
 }

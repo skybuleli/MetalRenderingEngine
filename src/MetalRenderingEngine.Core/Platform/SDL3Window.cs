@@ -14,6 +14,12 @@ public sealed class SDL3Window : IDisposable
     /// <summary>CAMetalLayer 句柄（bridge 层可直接使用）。</summary>
     public nuint LayerHandle => _layerHandle;
 
+    /// <summary>SDL_Window 原生句柄。</summary>
+    public nint WindowHandle => _window;
+
+    /// <summary>SDL_MetalView 原生句柄（NSView 子类）。</summary>
+    public nint MetalViewHandle => _metalView;
+
     /// <summary>创建 SDL3 窗口并初始化 Metal 视图。</summary>
     public static SDL3Window Create(string title, int width, int height)
     {

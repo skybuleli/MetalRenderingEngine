@@ -39,8 +39,9 @@ compile_one() {
         -profile sm_6_0 \
         -o "$dxil"
 
-    # 2) DXIL → metallib（metal-shaderconverter 是 metal-irconverter 的对外别名）
-    metal-shaderconverter "$dxil" -o "$metallib"
+    # 2) DXIL → metallib（同时输出 MSC reflection JSON）
+    metal-shaderconverter "$dxil" -o "$metallib" \
+      --output-reflection-file "$OUT_DIR/$name.reflect.json"
 
     echo "[shader] ✅ $metallib"
 }

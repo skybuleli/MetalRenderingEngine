@@ -5,18 +5,6 @@ using System.Runtime.InteropServices;
 namespace MetalRenderingEngine.Demo;
 
 /// <summary>
-/// MSC 输出的 metallib 在 buffer(0) 处期望的 UAV 描述符（24 字节）。
-/// 字段顺序与 reflection JSON 的 TopLevelArgumentBuffer 描述对齐。
-/// </summary>
-[StructLayout(LayoutKind.Sequential)]
-internal struct UavDescriptor
-{
-    public ulong GpuAddress;
-    public ulong Length;
-    public ulong Stride;
-}
-
-/// <summary>
 /// Phase 1 验证：把 1024 元素 buffer 经 Metal compute shader ×2 后断言结果。
 /// </summary>
 internal static class Program
@@ -30,7 +18,8 @@ internal static class Program
             if (mode == "compute") return ComputeDemo.Run();
             if (mode == "triangle") return TriangleApp.Run();
             if (mode == "textured") return TexturedApp.Run();
-            Console.Error.WriteLine("Usage: dotnet run -- [compute|triangle|textured]");
+            if (mode == "imgui") return ImGuiApp.Run();
+            Console.Error.WriteLine("Usage: dotnet run -- [compute|triangle|textured|imgui]");
             return 1;
         }
         catch (MetalException ex)

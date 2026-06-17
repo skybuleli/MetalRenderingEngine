@@ -48,4 +48,6 @@ if [ $slangc_rc -ne 0 ]; then
 fi
 
 # ── Step 2: DXIL → metallib ────────────────────────────────
-metal-shaderconverter "$dxil_out" -o "$metallib_out" 2>&1
+# 同时输出 MSC reflection JSON，用于运行时 argument buffer 布局解析
+metal-shaderconverter "$dxil_out" -o "$metallib_out" \
+  --output-reflection-file "${metallib_out%.metallib}.reflect.json" 2>&1

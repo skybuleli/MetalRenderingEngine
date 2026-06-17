@@ -308,6 +308,15 @@ mtl_handle_t MTLDevice_newRenderPipelineState(mtl_handle_t device,
     for (int i = 0; i < desc->color_count && i < 8; i++) {
         pd.colorAttachments[i].pixelFormat = (MTLPixelFormat)desc->colors[i].pixel_format;
         pd.colorAttachments[i].writeMask = (MTLColorWriteMask)desc->colors[i].write_mask;
+        if (desc->colors[i].blending_enabled) {
+            pd.colorAttachments[i].blendingEnabled = YES;
+            pd.colorAttachments[i].sourceRGBBlendFactor = (MTLBlendFactor)desc->colors[i].src_rgb_blend_factor;
+            pd.colorAttachments[i].destinationRGBBlendFactor = (MTLBlendFactor)desc->colors[i].dst_rgb_blend_factor;
+            pd.colorAttachments[i].sourceAlphaBlendFactor = (MTLBlendFactor)desc->colors[i].src_alpha_blend_factor;
+            pd.colorAttachments[i].destinationAlphaBlendFactor = (MTLBlendFactor)desc->colors[i].dst_alpha_blend_factor;
+            pd.colorAttachments[i].rgbBlendOperation = (MTLBlendOperation)desc->colors[i].rgb_blend_op;
+            pd.colorAttachments[i].alphaBlendOperation = (MTLBlendOperation)desc->colors[i].alpha_blend_op;
+        }
     }
     pd.depthAttachmentPixelFormat = (MTLPixelFormat)desc->depth_pixel_format;
     pd.stencilAttachmentPixelFormat = (MTLPixelFormat)desc->stencil_pixel_format;
@@ -390,6 +399,23 @@ void MTLRenderCommandEncoder_drawPrimitives(mtl_handle_t encoder,
     id<MTLRenderCommandEncoder> e = H2ID(encoder);
     MTLPrimitiveType pt = (primitive_type == 0) ? MTLPrimitiveTypeTriangle : MTLPrimitiveTypeTriangle;
     [e drawPrimitives:pt vertexStart:(NSUInteger)vertex_start vertexCount:(NSUInteger)vertex_count];
+}
+
+void MTLRenderCommandEncoder_drawIndexedPrimitives(mtl_handle_t encoder,
+                                                    int primitive_type,
+                                                    uint64_t index_count,
+                                                    int index_type,
+                                                    mtl_handle_t index_buffer,
+                                                    uint64_t index_buffer_offset) {
+    if (encoder == MTL_NULL_HANDLE || index_buffer == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    MTLPrimitiveType pt = (primitive_type == 0) ? MTLPrimitiveTypeTriangle : MTLPrimitiveTypeTriangle;
+    MTLIndexType it = (index_type == 0) ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32;
+    [e drawIndexedPrimitives:pt
+                  indexCount:(NSUInteger)index_count
+                   indexType:it
+                 indexBuffer:H2ID(index_buffer)
+           indexBufferOffset:(NSUInteger)index_buffer_offset];
 }
 
 void MTLRenderCommandEncoder_endEncoding(mtl_handle_t encoder) {
@@ -486,7 +512,27 @@ int Cocoa_PollEvents(void) {
         }
         [NSApp sendEvent:event];
     }
+    /* 检测用户点击关闭按钮后窗口已不可见的情况 */
+    NSWindow *keyWin = [NSApp keyWindow];
+    if (keyWin && ![keyWin isVisible]) return 1;
     return 0;
+}
+
+mtl_handle_t Cocoa_WindowContentView(mtl_handle_t window) {
+    if (window == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
+    NSWindow *win = H2ID(window);
+    NSView *view = [win contentView];
+    /* 不增加引用计数：view 由 window 持有，C# 端仅在窗口存活期间使用 */
+    return (mtl_handle_t)(uintptr_t)(__bridge void *)view;
+}
+
+void Cocoa_ViewDrawableSize(mtl_handle_t view, float *out_width, float *out_height) {
+    if (view == MTL_NULL_HANDLE || !out_width || !out_height) return;
+    NSView *nsView = H2ID(view);
+    /* convertSizeToBacking 将逻辑坐标转换为像素坐标（HiDPI） */
+    NSSize pixelSize = [nsView convertSizeToBacking:nsView.bounds.size];
+    *out_width  = (float)pixelSize.width;
+    *out_height = (float)pixelSize.height;
 }
 
 /* ============================================================
@@ -638,4 +684,52 @@ void MTLRenderCommandEncoder_updateFence(mtl_handle_t encoder, mtl_handle_t fenc
     if (encoder == MTL_NULL_HANDLE || fence == MTL_NULL_HANDLE) return;
     id<MTLRenderCommandEncoder> e = H2ID(encoder);
     [e updateFence:H2ID(fence) afterStages:(MTLRenderStages)after_stages];
+}
+
+/* ============================================================
+ *  Phase 3.5: MTLArgumentEncoder
+ * ============================================================ */
+
+mtl_handle_t MTLFunction_newArgumentEncoder(mtl_handle_t function, uint64_t buffer_index) {
+    if (function == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
+    id<MTLFunction> fn = H2ID(function);
+    id<MTLArgumentEncoder> enc = [fn newArgumentEncoderWithBufferIndex:(NSUInteger)buffer_index];
+    return enc ? (mtl_handle_t)(uintptr_t)CFBridgingRetain(enc) : MTL_NULL_HANDLE;
+}
+
+uint64_t MTLArgumentEncoder_encodedLength(mtl_handle_t encoder) {
+    if (encoder == MTL_NULL_HANDLE) return 0;
+    id<MTLArgumentEncoder> enc = H2ID(encoder);
+    return (uint64_t)[enc encodedLength];
+}
+
+void MTLArgumentEncoder_encodeTextureSampler(mtl_handle_t encoder,
+                                              mtl_handle_t arg_buffer,
+                                              uint64_t offset,
+                                              mtl_handle_t texture,
+                                              mtl_handle_t sampler) {
+    if (encoder == MTL_NULL_HANDLE || arg_buffer == MTL_NULL_HANDLE) return;
+    id<MTLArgumentEncoder> enc = H2ID(encoder);
+    id<MTLBuffer> buf = H2ID(arg_buffer);
+    /* setArgumentBuffer:offset: 将 encoder 关联到 buffer 的指定偏移 */
+    [enc setArgumentBuffer:buf offset:(NSUInteger)offset];
+    if (texture != MTL_NULL_HANDLE) [enc setTexture:H2ID(texture) atIndex:0];
+    if (sampler != MTL_NULL_HANDLE) [enc setSamplerState:H2ID(sampler) atIndex:0];
+}
+
+/* ============================================================
+ *  Phase 3.5: MTLRenderPassDescriptor
+ * ============================================================ */
+
+mtl_handle_t MTLRenderPassDescriptor_createForTexture(mtl_handle_t texture) {
+    if (texture == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
+    MTLRenderPassDescriptor *desc = [MTLRenderPassDescriptor renderPassDescriptor];
+    desc.colorAttachments[0].texture = H2ID(texture);
+    desc.colorAttachments[0].loadAction = MTLLoadActionLoad;
+    desc.colorAttachments[0].storeAction = MTLStoreActionStore;
+    return ID2H(desc);
+}
+
+void MTLRenderPassDescriptor_release(mtl_handle_t desc) {
+    if (desc != MTL_NULL_HANDLE) CFRelease((CFTypeRef)(void*)desc);
 }

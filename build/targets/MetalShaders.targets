@@ -44,6 +44,12 @@
     <Copy SourceFiles="$(_OutputDir)%(MetalShader.Filename).metallib"
           DestinationFolder="$(MSBuildProjectDirectory)/$(OutDir)shaders"
           SkipUnchangedFiles="true" />
+
+    <!-- 同时复制 MSC reflection JSON（如存在） -->
+    <Copy SourceFiles="$(_OutputDir)%(MetalShader.Filename).reflect.json"
+          DestinationFolder="$(MSBuildProjectDirectory)/$(OutDir)shaders"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(_OutputDir)%(MetalShader.Filename).reflect.json')" />
   </Target>
 
 </Project>

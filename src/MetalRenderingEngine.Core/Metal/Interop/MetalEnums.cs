@@ -45,8 +45,9 @@ public enum MTLResourceUsage : uint
 public enum MTLPixelFormat : int
 {
     Invalid      = 0,
-    BGRA8Unorm   = 80,
+    R8Unorm      = 10,   /* Phase 3.5: ImGui font atlas */
     RGBA8Unorm   = 70,
+    BGRA8Unorm   = 80,
     RGBA32Float  = 125,
     Depth32Float = 252,
 }
@@ -132,4 +133,33 @@ public enum MTLRenderStages : uint
 {
     Vertex   = 1,
     Fragment = 2,
+}
+
+// ============================================================
+// Phase 3.5 枚举
+// ============================================================
+
+/// <summary>MTLBlendFactor（与 native/bridge.h 中 WMTBlendFactor 对齐）。</summary>
+public enum MTLBlendFactor : int
+{
+    Zero                     = 0,
+    One                      = 1,
+    SourceColor              = 2,
+    OneMinusSourceColor      = 3,
+    SourceAlpha              = 4,
+    OneMinusSourceAlpha      = 5,
+    DestinationAlpha         = 6,
+    OneMinusDestinationAlpha = 7,
+    DestinationColor         = 8,
+    OneMinusDestinationColor = 9,
+}
+
+/// <summary>MTLBlendOperation（与 native/bridge.h 中 WMTBlendOperation 对齐）。</summary>
+public enum MTLBlendOperation : int
+{
+    Add              = 0,
+    Subtract         = 1,
+    ReverseSubtract  = 2,
+    Min              = 3,
+    Max              = 4,
 }

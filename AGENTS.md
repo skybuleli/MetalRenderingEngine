@@ -74,7 +74,9 @@ MetalRenderingEngine/
 │   │   ├── Compute/
 │   │   └── Render/
 │   └── MetalRenderingEngine.Demo/    # 示例/测试项目
-│       └── Program.cs
+│       ├── Program.cs
+│       ├── ImGuiMetalRenderer.cs     # Phase 3.5: ImGui Metal 渲染器
+│       └── ImGuiApp.cs               # Phase 3.5: ImGui 调试 UI Demo
 ├── build/
 │   ├── compile_shaders.sh            # 着色器编译脚本
 │   └── build_bridge.sh              # bridge.m 编译脚本
@@ -279,6 +281,7 @@ dotnet build MetalRenderingEngine.sln
 
 - `System.Numerics.Vectors` — SIMD 数学类型
 - `System.Runtime.CompilerServices.Unsafe` — 指针操作辅助
+- `ImGui.NET` 1.91.6.1 — 调试 UI（Phase 3.5，仅 Demo 项目）
 - 用户界面框架（如 Avalonia）— 仅用于 Demo 项目
 
 **任何新增 NuGet 依赖必须在 AGENTS.md 的此节中记录。**

@@ -166,6 +166,9 @@ internal static partial class MetalBridge
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_drawPrimitives")]
     public static partial void MTLRenderCommandEncoder_drawPrimitives(nuint encoder, int primitive_type, ulong vertex_start, ulong vertex_count);
 
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_drawIndexedPrimitives")]
+    public static partial void MTLRenderCommandEncoder_drawIndexedPrimitives(nuint encoder, int primitive_type, ulong index_count, int index_type, nuint index_buffer, ulong index_buffer_offset);
+
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_endEncoding")]
     public static partial void MTLRenderCommandEncoder_endEncoding(nuint encoder);
 
@@ -196,6 +199,15 @@ internal static partial class MetalBridge
 
     [LibraryImport(LibraryName, EntryPoint = "Cocoa_PollEvents")]
     public static partial int Cocoa_PollEvents();
+
+    /// <summary>获取 window 的 contentView（NSView*），用于传给 ImGuiImplOSX.Init。
+    /// 返回的句柄不增加引用计数（view 由 window 持有）。</summary>
+    [LibraryImport(LibraryName, EntryPoint = "Cocoa_WindowContentView")]
+    public static partial nuint Cocoa_WindowContentView(nuint window);
+
+    /// <summary>获取 view 的 drawable 尺寸（像素，已考虑 HiDPI）。</summary>
+    [LibraryImport(LibraryName, EntryPoint = "Cocoa_ViewDrawableSize")]
+    public static unsafe partial void Cocoa_ViewDrawableSize(nuint view, float* out_width, float* out_height);
 
     // ============================================================
     //  MTLTexture（只读回读）
@@ -264,4 +276,14 @@ internal static partial class MetalBridge
 
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_updateFence")]
     public static partial void MTLRenderCommandEncoder_updateFence(nuint encoder, nuint fence, uint after_stages);
+
+    // ============================================================
+    //  Phase 3.5: MTLRenderPassDescriptor (for Hexa.NET.ImGui Backends)
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderPassDescriptor_createForTexture")]
+    public static partial nuint MTLRenderPassDescriptor_createForTexture(nuint texture);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderPassDescriptor_release")]
+    public static partial void MTLRenderPassDescriptor_release(nuint desc);
 }

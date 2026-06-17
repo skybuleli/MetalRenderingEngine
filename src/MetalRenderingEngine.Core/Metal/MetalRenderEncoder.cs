@@ -33,6 +33,14 @@ public sealed class MetalRenderEncoder : MetalObject
     public void DrawTriangles(ulong vertexStart, ulong vertexCount)
         => DrawPrimitives(0, vertexStart, vertexCount);
 
+    /// <summary>使用 index buffer 绘制三角形。</summary>
+    public void DrawIndexedTriangles(ulong indexCount, bool is32Bit, MetalBuffer indexBuffer, ulong indexBufferOffset = 0)
+    {
+        ArgumentNullException.ThrowIfNull(indexBuffer);
+        MetalBridge.MTLRenderCommandEncoder_drawIndexedPrimitives(
+            Handle, 0, indexCount, is32Bit ? 1 : 0, indexBuffer.Handle, indexBufferOffset);
+    }
+
     public void EndEncoding()
         => MetalBridge.MTLRenderCommandEncoder_endEncoding(Handle);
 
