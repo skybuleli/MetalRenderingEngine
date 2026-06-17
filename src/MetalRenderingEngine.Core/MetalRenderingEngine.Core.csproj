@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>MetalRenderingEngine</RootNamespace>
+    <AssemblyName>MetalRenderingEngine.Core</AssemblyName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- .NET 10 SDK 在本机离线缓存中缺少 prune 数据；显式关闭以避免 NETSDK1226 -->
+    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 把编译好的桥接 dylib 复制到使用 Core 的项目的输出目录 -->
+    <Content Include="$(MSBuildThisFileDirectory)../../out/libmetal_bridge.dylib">
+      <Link>libmetal_bridge.dylib</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+    </Content>
+  </ItemGroup>
+
+</Project>

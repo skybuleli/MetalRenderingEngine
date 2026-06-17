@@ -1,0 +1,181 @@
+/*
+ * bridge.h — Metal 桥接层 C ABI（Phase 1：compute 子集）
+ *
+ * 设计原则（详见 csharp-metal-rendering-blueprint.md §4.1 与
+ * /Users/liliang/.claude/plans/csharp-metal-rendering-blueprint-md-temporal-sphinx.md
+ * 的 "DXMT 参考映射"章节）：
+ *   1. 命名风格借鉴 DXMT winemetal.h：MTLClass_methodName / NSClass_methodName
+ *   2. 句柄类型统一为 mtl_handle_t（uint64），便于 C# 端用 nuint marshal
+ *   3. 每个函数只做"句柄→ObjC 调用→返回句柄"的薄包装，正文不超过 20 行
+ *   4. 错误通过 mtl_handle_t* err_out 回传（0 = 成功），不抛 ObjC 异常
+ *   5. 所有 newXxx 函数返回 retained handle（__bridge_retained），调用方负责 release
+ */
+
+#ifndef METAL_BRIDGE_H
+#define METAL_BRIDGE_H
+
+#include <stdint.h>
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* ============================================================
+ *  类型与常量
+ * ============================================================ */
+
+/* 不透明句柄：在 macOS 上即 uintptr_t（与 id 等宽，64 位） */
+typedef uintptr_t mtl_handle_t;
+
+#define MTL_NULL_HANDLE ((mtl_handle_t)0)
+
+/* MTLResourceOptions 子集（与 MTLResourceOptions 位定义一致） */
+enum WMTResourceOptions {
+    WMTResourceCPUCacheModeDefault       = 0,
+    WMTResourceCPUCacheModeWriteCombined = 1,
+    WMTResourceStorageModeShared         = 0 << 4,
+    WMTResourceStorageModeManaged        = 1 << 4,
+    WMTResourceStorageModePrivate        = 2 << 4,
+    WMTResourceStorageModeMemoryless     = 3 << 4,
+};
+
+/* MTLCommandBufferStatus（顺序与 ObjC 枚举对齐） */
+enum WMTCommandBufferStatus {
+    WMTCommandBufferStatusNotEnqueued = 0,
+    WMTCommandBufferStatusEnqueued    = 1,
+    WMTCommandBufferStatusCommitted   = 2,
+    WMTCommandBufferStatusScheduled   = 3,
+    WMTCommandBufferStatusCompleted   = 4,
+    WMTCommandBufferStatusError       = 5,
+};
+
+/* Buffer 创建参数（C 标准布局，C# 端 LayoutKind.Sequential 对应） */
+struct WMTBufferInfo {
+    uint64_t length;          /* 字节数 */
+    uint32_t options;         /* WMTResourceOptions 位或 */
+    uint32_t reserved;        /* 对齐填充，保持 16 字节倍数 */
+};
+
+/* 三维尺寸（对应 MTLSize） */
+struct WMTSize {
+    uint64_t width;
+    uint64_t height;
+    uint64_t depth;
+};
+
+/* ============================================================
+ *  引用计数（对应 NSObject -retain / -release）
+ * ============================================================ */
+
+void NSObject_retain(mtl_handle_t obj);
+void NSObject_release(mtl_handle_t obj);
+
+/* ============================================================
+ *  NSError
+ * ============================================================ */
+
+/* 拷贝 -localizedDescription 到 buffer（UTF-8），返回实际写入字节数（含 \0）；
+ * 若 buffer 为 NULL 或 max_length 为 0，仅返回所需字节数（含 \0）。 */
+uint64_t NSError_localizedDescription(mtl_handle_t error, char *buffer, uint64_t max_length);
+
+/* ============================================================
+ *  MTLDevice
+ * ============================================================ */
+
+/* 对应 ObjC 的 MTLCreateSystemDefaultDevice()；改名避开 Metal.framework 同名符号冲突 */
+mtl_handle_t MTLDevice_createSystemDefault(void);
+
+/* 拷贝 device.name 到 buffer（UTF-8），语义与 NSError_localizedDescription 一致 */
+uint64_t MTLDevice_name(mtl_handle_t device, char *buffer, uint64_t max_length);
+
+int MTLDevice_hasUnifiedMemory(mtl_handle_t device);
+
+uint64_t MTLDevice_recommendedMaxWorkingSetSize(mtl_handle_t device);
+
+/* ============================================================
+ *  MTLLibrary / MTLFunction
+ * ============================================================ */
+
+/* 从预编译 .metallib 字节流创建 library；
+ * 失败时返回 MTL_NULL_HANDLE 并把 NSError 句柄写入 *err_out（retained，调用方释放）。
+ * 成功时 *err_out 写 MTL_NULL_HANDLE。 */
+mtl_handle_t MTLDevice_newLibrary(mtl_handle_t device,
+                                  const void *data,
+                                  uint64_t length,
+                                  mtl_handle_t *err_out);
+
+/* name 为 UTF-8 C 字符串；找不到返回 MTL_NULL_HANDLE */
+mtl_handle_t MTLLibrary_newFunctionWithName(mtl_handle_t library, const char *name);
+
+/* ============================================================
+ *  MTLComputePipelineState
+ * ============================================================ */
+
+mtl_handle_t MTLDevice_newComputePipelineState(mtl_handle_t device,
+                                               mtl_handle_t function,
+                                               mtl_handle_t *err_out);
+
+uint64_t MTLComputePipelineState_maxTotalThreadsPerThreadgroup(mtl_handle_t pso);
+uint64_t MTLComputePipelineState_threadExecutionWidth(mtl_handle_t pso);
+
+/* ============================================================
+ *  MTLBuffer
+ * ============================================================ */
+
+mtl_handle_t MTLDevice_newBuffer(mtl_handle_t device, const struct WMTBufferInfo *info);
+
+/* 返回 CPU 可访问的内存指针（StorageModeShared/Managed）；Private 模式返回 NULL */
+void *MTLBuffer_contents(mtl_handle_t buffer);
+
+/* Apple Silicon 上 buffer 的 64 位 GPU 虚拟地址；M1+ 必为非零。
+ * MSC 输出的 metallib 通过 top-level argument buffer 间接寻址资源，
+ * 调用方通常需要把此地址 setBytes 到 buffer(0) 的 argument buffer 中。
+ * 详见 docs/slang-reflection-binding-design.md §3.2 + memory/msc-binding-model.md */
+uint64_t MTLBuffer_gpuAddress(mtl_handle_t buffer);
+
+/* Managed 模式下显式标记 CPU 端修改区间（Shared/Private 模式空操作） */
+void MTLBuffer_didModifyRange(mtl_handle_t buffer, uint64_t offset, uint64_t length);
+
+/* ============================================================
+ *  MTLCommandQueue / MTLCommandBuffer
+ * ============================================================ */
+
+mtl_handle_t MTLDevice_newCommandQueue(mtl_handle_t device);
+
+mtl_handle_t MTLCommandQueue_commandBuffer(mtl_handle_t queue);
+
+void MTLCommandBuffer_commit(mtl_handle_t cmdbuf);
+void MTLCommandBuffer_waitUntilCompleted(mtl_handle_t cmdbuf);
+
+int MTLCommandBuffer_status(mtl_handle_t cmdbuf);
+
+/* 返回当前命令缓冲的错误对象（retained，调用方释放）；无错误返回 MTL_NULL_HANDLE */
+mtl_handle_t MTLCommandBuffer_error(mtl_handle_t cmdbuf);
+
+/* ============================================================
+ *  MTLComputeCommandEncoder
+ * ============================================================ */
+
+mtl_handle_t MTLCommandBuffer_computeCommandEncoder(mtl_handle_t cmdbuf);
+
+void MTLComputeCommandEncoder_setComputePipelineState(mtl_handle_t encoder, mtl_handle_t pso);
+void MTLComputeCommandEncoder_setBuffer(mtl_handle_t encoder, mtl_handle_t buffer, uint64_t offset, uint64_t index);
+void MTLComputeCommandEncoder_setBytes(mtl_handle_t encoder, const void *bytes, uint64_t length, uint64_t index);
+void MTLComputeCommandEncoder_setTexture(mtl_handle_t encoder, mtl_handle_t texture, uint64_t index);
+
+/* 让 GPU 在本 encoder pass 内驻留某个资源（用于通过 GPU 地址间接访问的场景）。
+ * usage 为 MTLResourceUsage 位或：1=Read, 2=Write, 4=Sample */
+void MTLComputeCommandEncoder_useResource(mtl_handle_t encoder, mtl_handle_t resource, uint32_t usage);
+
+void MTLComputeCommandEncoder_dispatchThreadgroups(mtl_handle_t encoder,
+                                                   struct WMTSize threadgroups_per_grid,
+                                                   struct WMTSize threads_per_threadgroup);
+
+void MTLComputeCommandEncoder_endEncoding(mtl_handle_t encoder);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* METAL_BRIDGE_H */
