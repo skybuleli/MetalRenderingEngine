@@ -10,6 +10,9 @@ public sealed class MetalComputeCommandEncoder : MetalObject
 {
     internal MetalComputeCommandEncoder(nuint handle) { SetNativeHandle(handle); }
 
+    /// <summary>结束此 encoder pass；之后 encoder 句柄不再可用（释放即可）。</summary>
+    public void EndEncoding() => MetalBridge.MTLComputeCommandEncoder_endEncoding(Handle);
+
     /// <summary>切换 compute pipeline。</summary>
     public void SetComputePipelineState(MetalComputePipelineState pso)
     {
@@ -53,7 +56,4 @@ public sealed class MetalComputeCommandEncoder : MetalObject
         ArgumentNullException.ThrowIfNull(resource);
         MetalBridge.MTLComputeCommandEncoder_useResource(Handle, resource.Handle, (uint)usage);
     }
-
-    /// <summary>结束此 encoder pass；之后 encoder 句柄不再可用（释放即可）。</summary>
-    public void EndEncoding() => MetalBridge.MTLComputeCommandEncoder_endEncoding(Handle);
 }

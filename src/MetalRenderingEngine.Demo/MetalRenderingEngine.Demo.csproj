@@ -8,12 +8,29 @@
     <RootNamespace>MetalRenderingEngine.Demo</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>obj/Generated</CompilerGeneratedFilesOutputPath>
   </PropertyGroup>
 
   <Import Project="$(MSBuildThisFileDirectory)../../build/targets/MetalShaders.targets" />
+  
+    <!-- 将由 compile_shaders.sh 编译的 .metallib 复制到输出目录 -->
+    <Target Name="CopyManualShaders" AfterTargets="AfterBuild">
+      <ItemGroup>
+        <_ManualMetallib Include="$(MSBuildThisFileDirectory)../../out/shaders/*.metallib" />
+      </ItemGroup>
+      <Copy SourceFiles="@(_ManualMetallib)"
+            DestinationFolder="$(OutDir)shaders"
+            SkipUnchangedFiles="true" />
+    </Target>
 
   <ItemGroup>
     <ProjectReference Include="../MetalRenderingEngine.Core/MetalRenderingEngine.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ShaderGen 源生成器（用于编译 Demo 中的 [Shader] 类型） -->
+    <ProjectReference Include="../MetalRenderingEngine.ShaderGen/MetalRenderingEngine.ShaderGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>

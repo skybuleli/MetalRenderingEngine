@@ -20,6 +20,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- ShaderGen 源生成器 -->
+    <ProjectReference Include="../MetalRenderingEngine.ShaderGen/MetalRenderingEngine.ShaderGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- 把编译好的桥接 dylib 复制到使用 Core 的项目的输出目录 -->
     <Content Include="$(MSBuildThisFileDirectory)../../out/libmetal_bridge.dylib">
       <Link>libmetal_bridge.dylib</Link>

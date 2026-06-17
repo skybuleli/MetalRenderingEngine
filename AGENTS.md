@@ -27,8 +27,8 @@
 | 项 | 锁定值 |
 |----|--------|
 | .NET 版本 | 10.0+ |
-| 着色器语言 | Slang（HLSL 超集），未来通过 C# 源生成器生成 |
-| 着色器编译路径 | `slangc -target dxil -profile sm_6_0` → `metal-shaderconverter` → `.metallib` |
+| 着色器语言 | Slang（HLSL 超集），通过 C# 源生成器（`[Shader]` partial struct）生成 |
+| 着色器编译路径 | `[Shader]` C# struct →（源生成器）→ Slang 源码/ Binding 类 → `slangc -target dxil -profile sm_6_0` → `metal-shaderconverter` → `.metallib` |
 | Metal 接口方式 | 自定义 `bridge.m`（C ABI）→ C# P/Invoke → SafeHandle |
 | 开发平台 | macOS 26.4.1，Apple Silicon (M1, 8GB) |
 | Xcode | 仅 Command Line Tools（无完整 Xcode.app） |
@@ -73,12 +73,29 @@ MetalRenderingEngine/
 │   ├── MetalRenderingEngine.Shaders/ # 着色器源代码
 │   │   ├── Compute/
 │   │   └── Render/
-│   └── MetalRenderingEngine.Demo/    # 示例/测试项目
-│       ├── Program.cs
-│       ├── ImGuiMetalRenderer.cs     # Phase 3.5: ImGui Metal 渲染器
-│       └── ImGuiApp.cs               # Phase 3.5: ImGui 调试 UI Demo
+│   ├── MetalRenderingEngine.Demo/    # 示例/测试项目
+│   │   ├── Program.cs
+│   │   ├── ImGuiMetalRenderer.cs     # Phase 3.5: ImGui Metal 渲染器
+│   │   ├── ImGuiApp.cs               # Phase 3.5: ImGui 调试 UI Demo
+│   │   └── Shaders/                  # Phase 5: C# Shader struct 定义（源生成器输入）
+│   │       ├── MultiplyShader.cs
+│   │       ├── TriangleShader.cs
+│   │       └── MandelbrotShader.cs
+│   └── MetalRenderingEngine.ShaderGen/  # Phase 5: C# 源生成器
+│       ├── ShaderGenerator.cs           # IIncrementalGenerator 入口
+│       ├── Models/ShaderModel.cs        # Shader 信息模型
+│       ├── Translation/
+│       │   ├── TypeMapper.cs            # C#→Slang 类型映射
+│       │   ├── ExpressionTranslator.cs  # 表达式翻译
+│       │   └── StatementTranslator.cs   # 语句翻译
+│       └── Emit/
+│           ├── SlangEmitter.cs          # Slang 着色器代码生成
+│           └── BindingClassEmitter.cs   # C# Binding 类生成
 ├── build/
 │   ├── compile_shaders.sh            # 着色器编译脚本
+│   ├── compile_generated_shaders.sh  # Phase 5: 从源生成器输出编译着色器
+│   ├── targets/
+│   │   └── MetalShaders.targets      # Phase 5: MSBuild 后处理目标
 │   └── build_bridge.sh              # bridge.m 编译脚本
 ├── tests/
 │   └── MetalRenderingEngine.Tests/   # 单元测试
@@ -243,12 +260,19 @@ metal-shaderconverter <out>.dxil -o <out>.metallib
 # 先编译 bridge
 ./build/build_bridge.sh
 
-# 编译着色器
+# 编译手动编写的 .slang 着色器
 ./build/compile_shaders.sh
 
-# 构建 .NET 项目
+# 构建 .NET 项目（包含源生成器 + MSBuild 后处理编译生成的着色器）
 dotnet build MetalRenderingEngine.sln
 ```
+
+构建流程说明：
+1. 编译 C# → Slang 源生成器 `MetalRenderingEngine.ShaderGen`
+2. Roslyn `IIncrementalGenerator` 扫描所有标记 `[Shader]` 的 partial struct
+3. 生成 Slang 源码（const string 嵌入 C# Binding 类）和类型安全的资源绑定类
+4. `MetalShaders.targets` 在 CoreCompile 后自动调用 `compile_generated_shaders.sh`
+5. 脚本从生成的 Binding 类中提取 Slang 源码，编译为 `.metallib`
 
 ### 6.4 调试
 
@@ -279,6 +303,8 @@ dotnet build MetalRenderingEngine.sln
 
 ### 7.3 允许的 NuGet 依赖
 
+- `Microsoft.CodeAnalysis.CSharp` 4.12.0 — ShaderGen 源生成器（Roslyn 分析框架）
+- `Microsoft.CodeAnalysis.Analyzers` 3.3.4 — ShaderGen 分析器开发包
 - `System.Numerics.Vectors` — SIMD 数学类型
 - `System.Runtime.CompilerServices.Unsafe` — 指针操作辅助
 - `ImGui.NET` 1.91.6.1 — 调试 UI（Phase 3.5，仅 Demo 项目）
@@ -313,11 +339,18 @@ dotnet build MetalRenderingEngine.sln
 5. 重新编译 bridge.m 和 C# 项目
 6. 写单元测试验证
 
-### 8.3 添加新着色器
+### 8.3 添加新的 Slang 着色器（传统方式）
 
 1. 在 `src/MetalRenderingEngine.Shaders/` 下创建 `.slang` 文件
 2. 运行 `build/compile_shaders.sh`
 3. 将生成的 `.metallib` 添加到 C# 项目（嵌入资源或复制到输出）
+
+### 8.4 添加新的 C# Shader（源生成器方式）
+
+1. 在 Demo 项目的 `Shaders/` 目录下创建 `partial struct` 实现 `IComputeShader` / `IVertexShader` / `IFragmentShader`
+2. 标记为 `[Shader]`
+3. 源生成器自动生成 Slang 代码和 Binding 类
+4. `dotnet build` 自动编译为 `.metallib`
 
 ---
 
@@ -330,6 +363,10 @@ dotnet build MetalRenderingEngine.sln
 - `MetalLibrary` 加载 `.metallib` 测试
 - `MetalComputePipeline` 创建和调度测试
 - Bridge 引用计数泄漏测试
+- ShaderGen 类型映射测试
+- ShaderGen 表达式翻译测试（算术、逻辑、成员访问、数组、函数调用）
+- ShaderGen 语句翻译测试（for/while/if-else/break/return）
+- ShaderGen 完整着色器生成验证（Multiply、Triangle、Mandelbrot）
 
 ### 9.2 集成测试
 
@@ -352,3 +389,4 @@ dotnet test MetalRenderingEngine.sln
 | 日期 | 版本 | 变更 |
 |------|------|------|
 | 2026-06-17 | 1.0 | 初始版本，定义核心原则、架构约束、禁止事项 |
+| 2026-06-18 | 2.0 | Phase 5: 添加 C# Shader 源生成器（`IIncrementalGenerator`），支持 Compute/Vertex/Fragment 着色器自动生成 |

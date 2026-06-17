@@ -16,10 +16,12 @@ internal static class Program
         try
         {
             if (mode == "compute") return ComputeDemo.Run();
+            if (mode == "compute-gen") return ComputeShaderDemo.Run();
+            if (mode == "mandelbrot") return MandelbrotDemo.Run();
             if (mode == "triangle") return TriangleApp.Run();
             if (mode == "textured") return TexturedApp.Run();
             if (mode == "imgui") return ImGuiApp.Run();
-            Console.Error.WriteLine("Usage: dotnet run -- [compute|triangle|textured|imgui]");
+            Console.Error.WriteLine("Usage: dotnet run -- [compute|compute-gen|mandelbrot|triangle|textured|imgui]");
             return 1;
         }
         catch (MetalException ex)

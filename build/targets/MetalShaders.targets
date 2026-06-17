@@ -1,55 +1,44 @@
-<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project>
 
   <!--
-    MetalShaders.targets — MSBuild 着色器编译集成
-    在 BeforeBuild 前自动编译所有 .slang → .dxil → .metallib，
-    slangc 错误重映射为 IDE 可点击格式。
+    MetalShaders.targets
+    自动编译源生成器输出的 Slang 着色器为 .metallib。
+    在 CoreCompile 后运行，将生成的 .metallib 复制到输出目录。
   -->
 
   <PropertyGroup>
-    <!-- 着色器源码路径（相对 targets 文件） -->
-    <ShaderProjectRoot>$(MSBuildThisFileDirectory)../../src/MetalRenderingEngine.Shaders</ShaderProjectRoot>
-    <!-- 编译包装脚本路径 -->
-    <ShaderCompileScript>$(MSBuildThisFileDirectory)../compile_one_shader.sh</ShaderCompileScript>
-    <!-- 编译中间产物路径（.dxil + .metallib） -->
-    <ShaderIntermediateOutputDir>$(IntermediateOutputPath)shaders/</ShaderIntermediateOutputDir>
+    <GeneratedShaderDir>$(IntermediateOutputPath)Generated/MetalRenderingEngine.ShaderGen/MetalRenderingEngine.ShaderGen.ShaderGenerator</GeneratedShaderDir>
+    <ShaderOutputDir>$(IntermediateOutputPath)shaders</ShaderOutputDir>
+    <CompileGeneratedShadersScript>$(MSBuildThisFileDirectory)../compile_generated_shaders.sh</CompileGeneratedShadersScript>
   </PropertyGroup>
 
-  <ItemGroup>
-    <!-- 自动发现所有 .slang 文件 -->
-    <MetalShader Include="$(ShaderProjectRoot)/**/*.slang" />
-  </ItemGroup>
-  
-  <!--
-    CompileMetalShaders — 主编译 target，在 BeforeBuild 前运行。
-    Inputs/Outputs 提供全量增量检测：任一个 .slang 比对应 .metallib 新即全量重编。
-  -->
-  <Target Name="CompileMetalShaders"
-          BeforeTargets="BeforeBuild"
-          Inputs="@(MetalShader)"
-          Outputs="@(MetalShader->'$(MSBuildProjectDirectory)/$(IntermediateOutputPath)shaders/%(Filename).metallib')">
-  
-    <PropertyGroup>
-      <!-- 输出目录 -->
-      <_OutputDir>$(MSBuildProjectDirectory)/$(IntermediateOutputPath)shaders/</_OutputDir>
-    </PropertyGroup>
-  
-    <MakeDir Directories="$(_OutputDir)" />
-  
-    <!-- stage 由 compile_one_shader.sh 从文件名后缀自动推断 -->
-    <Exec Command="$(ShaderCompileScript) &quot;%(MetalShader.Identity)&quot; &quot;$(_OutputDir)%(MetalShader.Filename).dxil&quot; &quot;$(_OutputDir)%(MetalShader.Filename).metallib&quot;"
-          StandardOutputImportance="high" />
-  
-    <!-- 编译后将 .metallib 复制到输出目录 shaders/ -->
-    <Copy SourceFiles="$(_OutputDir)%(MetalShader.Filename).metallib"
-          DestinationFolder="$(MSBuildProjectDirectory)/$(OutDir)shaders"
-          SkipUnchangedFiles="true" />
+  <!-- 编译生成着色器，在 CoreCompile 之后运行（源生成器此时已输出 .Slang.g.cs） -->
+  <Target Name="CompileGeneratedShaders"
+          AfterTargets="CoreCompile"
+          Condition="Exists('$(GeneratedShaderDir)')">
 
-    <!-- 同时复制 MSC reflection JSON（如存在） -->
-    <Copy SourceFiles="$(_OutputDir)%(MetalShader.Filename).reflect.json"
-          DestinationFolder="$(MSBuildProjectDirectory)/$(OutDir)shaders"
-          SkipUnchangedFiles="true"
-          Condition="Exists('$(_OutputDir)%(MetalShader.Filename).reflect.json')" />
+    <Exec Command="chmod +x '$(CompileGeneratedShadersScript)'" StandardOutputImportance="low" />
+    <Exec Command="bash '$(CompileGeneratedShadersScript)' '$(GeneratedShaderDir)' '$(ShaderOutputDir)'"
+          StandardOutputImportance="high" />
+  </Target>
+
+  <!-- 将 metallib 复制到输出目录 -->
+  <Target Name="CopyGeneratedMetallibs"
+          AfterTargets="CompileGeneratedShaders"
+          Condition="Exists('$(ShaderOutputDir)')">
+
+    <ItemGroup>
+      <_GenMetallib Include="$(ShaderOutputDir)/*.generated.metallib" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_GenMetallib)"
+          DestinationFolder="$(OutDir)shaders"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- 清理 -->
+  <Target Name="CleanGeneratedShaders" AfterTargets="Clean">
+    <RemoveDir Directories="$(ShaderOutputDir)" Condition="Exists('$(ShaderOutputDir)')" />
   </Target>
 
 </Project>
