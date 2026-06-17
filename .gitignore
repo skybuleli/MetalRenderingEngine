@@ -1,0 +1,30 @@
+# ===== 外部参考代码（只读，不入版本库） =====
+references/
+
+# ===== 构建产物 =====
+out/
+bin/
+obj/
+*.dylib
+*.metallib
+*.dxil
+
+# ===== .NET 中间产物 =====
+*.user
+*.suo
+.vs/
+.vscode/launch.json
+.idea/
+*.swp
+
+# ===== macOS 系统文件 =====
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# ===== 测试 / 调试 =====
+TestResults/
+*.coverage
+*.trx

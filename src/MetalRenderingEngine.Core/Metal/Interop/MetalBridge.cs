@@ -1,0 +1,139 @@
+using System.Runtime.InteropServices;
+
+namespace MetalRenderingEngine.Metal.Interop;
+
+/// <summary>
+/// Phase 1 阶段的 P/Invoke 集中点，所有 DllImport 必须放在本文件
+/// （遵循 AGENTS.md §4.1）。
+///
+/// 命名与签名严格对应 native/bridge.h；签名变动时请同步两端。
+/// </summary>
+internal static partial class MetalBridge
+{
+    /// <summary>桥接动态库的基名；运行时按平台规则解析（macOS: lib*.dylib）。</summary>
+    public const string LibraryName = "libmetal_bridge";
+
+    // ============================================================
+    //  引用计数
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "NSObject_retain")]
+    public static partial void NSObject_retain(nuint obj);
+
+    [LibraryImport(LibraryName, EntryPoint = "NSObject_release")]
+    public static partial void NSObject_release(nuint obj);
+
+    // ============================================================
+    //  NSError
+    // ============================================================
+
+    /// <summary>拷贝 localizedDescription 到 buffer（UTF-8）；返回所需字节数（含 \0）。</summary>
+    [LibraryImport(LibraryName, EntryPoint = "NSError_localizedDescription")]
+    public static unsafe partial ulong NSError_localizedDescription(nuint error, byte* buffer, ulong max_length);
+
+    // ============================================================
+    //  MTLDevice
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_createSystemDefault")]
+    public static partial nuint MTLDevice_createSystemDefault();
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_name")]
+    public static unsafe partial ulong MTLDevice_name(nuint device, byte* buffer, ulong max_length);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_hasUnifiedMemory")]
+    [return: MarshalAs(UnmanagedType.I4)]
+    public static partial int MTLDevice_hasUnifiedMemory(nuint device);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_recommendedMaxWorkingSetSize")]
+    public static partial ulong MTLDevice_recommendedMaxWorkingSetSize(nuint device);
+
+    // ============================================================
+    //  MTLLibrary / MTLFunction
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newLibrary")]
+    public static unsafe partial nuint MTLDevice_newLibrary(nuint device, void* data, ulong length, nuint* err_out);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLLibrary_newFunctionWithName", StringMarshalling = StringMarshalling.Utf8)]
+    public static partial nuint MTLLibrary_newFunctionWithName(nuint library, string name);
+
+    // ============================================================
+    //  MTLComputePipelineState
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newComputePipelineState")]
+    public static unsafe partial nuint MTLDevice_newComputePipelineState(nuint device, nuint function, nuint* err_out);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLComputePipelineState_maxTotalThreadsPerThreadgroup")]
+    public static partial ulong MTLComputePipelineState_maxTotalThreadsPerThreadgroup(nuint pso);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLComputePipelineState_threadExecutionWidth")]
+    public static partial ulong MTLComputePipelineState_threadExecutionWidth(nuint pso);
+
+    // ============================================================
+    //  MTLBuffer
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newBuffer")]
+    public static unsafe partial nuint MTLDevice_newBuffer(nuint device, WMTBufferInfo* info);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLBuffer_contents")]
+    public static partial nint MTLBuffer_contents(nuint buffer);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLBuffer_gpuAddress")]
+    public static partial ulong MTLBuffer_gpuAddress(nuint buffer);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLBuffer_didModifyRange")]
+    public static partial void MTLBuffer_didModifyRange(nuint buffer, ulong offset, ulong length);
+
+    // ============================================================
+    //  MTLCommandQueue / MTLCommandBuffer
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newCommandQueue")]
+    public static partial nuint MTLDevice_newCommandQueue(nuint device);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandQueue_commandBuffer")]
+    public static partial nuint MTLCommandQueue_commandBuffer(nuint queue);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_commit")]
+    public static partial void MTLCommandBuffer_commit(nuint cmdbuf);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_waitUntilCompleted")]
+    public static partial void MTLCommandBuffer_waitUntilCompleted(nuint cmdbuf);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_status")]
+    public static partial int MTLCommandBuffer_status(nuint cmdbuf);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_error")]
+    public static partial nuint MTLCommandBuffer_error(nuint cmdbuf);
+
+    // ============================================================
+    //  MTLComputeCommandEncoder
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_computeCommandEncoder")]
+    public static partial nuint MTLCommandBuffer_computeCommandEncoder(nuint cmdbuf);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_setComputePipelineState")]
+    public static partial void MTLComputeCommandEncoder_setComputePipelineState(nuint encoder, nuint pso);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_setBuffer")]
+    public static partial void MTLComputeCommandEncoder_setBuffer(nuint encoder, nuint buffer, ulong offset, ulong index);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_setBytes")]
+    public static unsafe partial void MTLComputeCommandEncoder_setBytes(nuint encoder, void* bytes, ulong length, ulong index);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_setTexture")]
+    public static partial void MTLComputeCommandEncoder_setTexture(nuint encoder, nuint texture, ulong index);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_useResource")]
+    public static partial void MTLComputeCommandEncoder_useResource(nuint encoder, nuint resource, uint usage);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_dispatchThreadgroups")]
+    public static partial void MTLComputeCommandEncoder_dispatchThreadgroups(nuint encoder, WMTSize threadgroups_per_grid, WMTSize threads_per_threadgroup);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_endEncoding")]
+    public static partial void MTLComputeCommandEncoder_endEncoding(nuint encoder);
+}
