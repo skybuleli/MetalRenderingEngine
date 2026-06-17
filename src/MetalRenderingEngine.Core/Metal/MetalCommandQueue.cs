@@ -48,4 +48,21 @@ public sealed class MetalCommandBuffer : MetalObject
         if (h == 0) throw new MetalException("MTLCommandBuffer computeCommandEncoder returned nil.");
         return new MetalComputeCommandEncoder(h);
     }
+
+    public MetalRenderEncoder RenderCommandEncoder(in WMTRenderPassDesc desc)
+    {
+        unsafe
+        {
+            WMTRenderPassDesc local = desc;
+            nuint h = MetalBridge.MTLCommandBuffer_renderCommandEncoder(Handle, &local);
+            if (h == 0) throw new MetalException("MTLCommandBuffer renderCommandEncoder returned nil.");
+            return new MetalRenderEncoder(h);
+        }
+    }
+
+    public void PresentDrawable(MetalDrawable drawable)
+    {
+        ArgumentNullException.ThrowIfNull(drawable);
+        MetalBridge.MTLCommandBuffer_presentDrawable(Handle, drawable.Handle);
+    }
 }

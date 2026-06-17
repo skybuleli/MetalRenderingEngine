@@ -21,14 +21,16 @@ internal struct UavDescriptor
 /// </summary>
 internal static class Program
 {
-    private const int ElementCount = 1024;
-    private const int ThreadsPerGroup = 64; // 与 Multiply.slang 的 [numthreads(64,1,1)] 对齐
-
-    private static int Main()
+    private static int Main(string[] args)
     {
+        string mode = args.Length > 0 ? args[0].ToLowerInvariant() : "compute";
+
         try
         {
-            return Run();
+            if (mode == "compute") return ComputeDemo.Run();
+            if (mode == "triangle") return TriangleApp.Run();
+            Console.Error.WriteLine("Usage: dotnet run -- [compute|triangle]");
+            return 1;
         }
         catch (MetalException ex)
         {
@@ -41,8 +43,14 @@ internal static class Program
             return 3;
         }
     }
+}
 
-    private static int Run()
+internal static class ComputeDemo
+{
+    private const int ElementCount = 1024;
+    private const int ThreadsPerGroup = 64; // 与 Multiply.slang 的 [numthreads(64,1,1)] 对齐
+
+    public static int Run()
     {
         // 1) 设备
         using var device = MetalDevice.CreateSystemDefault();

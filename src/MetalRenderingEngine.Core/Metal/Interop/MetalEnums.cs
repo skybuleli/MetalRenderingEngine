@@ -38,3 +38,35 @@ public enum MTLResourceUsage : uint
     Write  = 2,
     Sample = 4,
 }
+
+/// <summary>
+/// MTLPixelFormat 子集（与 native/bridge.h 中 WMTPixelFormat 对齐）。
+/// </summary>
+public enum MTLPixelFormat : int
+{
+    Invalid      = 0,
+    BGRA8Unorm   = 80,
+    RGBA8Unorm   = 70,
+    RGBA32Float  = 125,
+    Depth32Float = 252,
+}
+
+/// <summary>
+/// MTLLoadAction（与 native/bridge.h 中 WMTLoadAction 对齐）。
+/// </summary>
+public enum MTLLoadAction : int
+{
+    DontCare = 0,
+    Load     = 1,
+    Clear    = 2,
+}
+
+/// <summary>
+/// MTLStoreAction（与 native/bridge.h 中 WMTStoreAction 对齐）。
+/// </summary>
+public enum MTLStoreAction : int
+{
+    DontCare           = 0,
+    Store              = 1,
+    MultisampleResolve = 2,
+}

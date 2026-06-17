@@ -17,9 +17,10 @@ clang -dynamiclib \
   -mmacosx-version-min=14.0 \
   -fobjc-arc \
   -O2 -Wall -Wextra -Wno-unused-parameter \
-  -framework Metal \
-  -framework Foundation \
-  -framework CoreFoundation \
+  -I/opt/homebrew/include \
+  -framework Metal -framework Foundation \
+  -framework CoreFoundation -framework QuartzCore -framework AppKit \
+  -L/opt/homebrew/lib -lSDL3 \
   -install_name "@rpath/libmetal_bridge.dylib" \
   -o "$OUT" \
   "$SRC_DIR/bridge.m"
