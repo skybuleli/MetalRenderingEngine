@@ -10,11 +10,11 @@ struct VSOutput {
 VSOutput main(uint vid : SV_VertexID)
 {
     VSOutput out;
-    // 全屏三角形：(-1,-1), (3,-1), (-1,3)
+    // 居中三角形：清晰可见，不铺满全屏
     float2 pos[3] = {
-        float2(-1.0, -1.0),
-        float2( 3.0, -1.0),
-        float2(-1.0,  3.0)
+        float2(-0.5, -0.5),
+        float2( 0.5, -0.5),
+        float2( 0.0,  0.5)
     };
     float3 col[3] = {
         float3(1.0, 0.0, 0.0),  // 红

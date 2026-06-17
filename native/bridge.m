@@ -17,6 +17,7 @@
 #import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 #import <CoreFoundation/CoreFoundation.h>
+#import <objc/message.h>
 #include "bridge.h"
 
 /* 把 mtl_handle_t 转回 ObjC id（不改变引用计数） */
@@ -468,4 +469,57 @@ mtl_handle_t Cocoa_CreateMetalWindow(const char *title, float width, float heigh
 
     if (out_layer) *out_layer = ID2H(layer);
     return ID2H(window);
+}
+
+/* 轮询一次 Cocoa 事件队列；返回 0 表示窗口仍打开，1 表示用户请求关闭（按 ESC 或关窗） */
+int Cocoa_PollEvents(void) {
+    NSEvent *event = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                        untilDate:[NSDate distantPast]
+                                           inMode:NSDefaultRunLoopMode
+                                          dequeue:YES];
+    if (event) {
+        if ([event type] == NSEventTypeKeyDown) {
+            NSString *chars = [event characters];
+            if ([chars length] > 0 && [chars characterAtIndex:0] == 27) { // ESC
+                return 1;
+            }
+        }
+        [NSApp sendEvent:event];
+    }
+    return 0;
+}
+
+/* ============================================================
+ *  MTLTexture（只读回读）
+ * ============================================================ */
+
+uint64_t MTLTexture_width(mtl_handle_t texture) {
+    if (texture == MTL_NULL_HANDLE) return 0;
+    id<MTLTexture> tex = H2ID(texture);
+    return (uint64_t)tex.width;
+}
+
+uint64_t MTLTexture_height(mtl_handle_t texture) {
+    if (texture == MTL_NULL_HANDLE) return 0;
+    id<MTLTexture> tex = H2ID(texture);
+    return (uint64_t)tex.height;
+}
+
+uint64_t MTLTexture_bytesPerRow(mtl_handle_t texture, uint64_t mip_level) {
+    if (texture == MTL_NULL_HANDLE) return 0;
+    id tex = H2ID(texture);
+    return (uint64_t)((NSUInteger (*)(id, SEL))objc_msgSend)(tex, @selector(bytesPerRow));
+}
+
+uint64_t MTLTexture_getBytes(mtl_handle_t texture, void *dst, uint64_t dst_size, uint64_t mip_level) {
+    if (texture == MTL_NULL_HANDLE || dst == NULL || dst_size == 0) return 0;
+    id tex = H2ID(texture);
+    NSUInteger width = (NSUInteger)[(id<MTLTexture>)tex width];
+    NSUInteger height = (NSUInteger)[(id<MTLTexture>)tex height];
+    NSUInteger bytesPerRow = (NSUInteger)((NSUInteger (*)(id, SEL))objc_msgSend)(tex, @selector(bytesPerRow));
+    NSUInteger requiredSize = bytesPerRow * height;
+    if (dst_size < requiredSize) return 0;
+    MTLRegion region = MTLRegionMake2D(0, 0, width, height);
+    [tex getBytes:dst bytesPerRow:bytesPerRow fromRegion:region mipmapLevel:(NSUInteger)mip_level];
+    return (uint64_t)requiredSize;
 }

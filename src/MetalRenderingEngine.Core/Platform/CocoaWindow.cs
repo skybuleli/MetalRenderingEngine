@@ -42,4 +42,10 @@ public sealed class CocoaWindow : IDisposable
             _layerHandle = 0;
         }
     }
+
+    /// <summary>
+    /// 轮询一次 Cocoa 事件队列。返回 true 表示用户请求关闭（按 ESC 或关窗）。
+    /// </summary>
+    public bool PollShouldClose()
+        => MetalBridge.Cocoa_PollEvents() != 0;
 }
