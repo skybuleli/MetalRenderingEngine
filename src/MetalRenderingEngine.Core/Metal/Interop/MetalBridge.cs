@@ -212,4 +212,56 @@ internal static partial class MetalBridge
 
     [LibraryImport(LibraryName, EntryPoint = "MTLTexture_getBytes")]
     public static unsafe partial ulong MTLTexture_getBytes(nuint texture, void* dst, ulong dst_size, ulong mip_level);
+
+    // ============================================================
+    //  Phase 3: MTLTexture 创建与写入
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newTexture")]
+    public static unsafe partial nuint MTLDevice_newTexture(nuint device, WMTTextureInfo* info);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLTexture_replaceRegion")]
+    public static unsafe partial void MTLTexture_replaceRegion(nuint texture, WMTOrigin origin, WMTSize size, ulong mip_level, ulong slice, void* data, ulong bytes_per_row, ulong bytes_per_image);
+
+    // ============================================================
+    //  Phase 3: MTLSamplerState
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newSamplerState")]
+    public static unsafe partial nuint MTLDevice_newSamplerState(nuint device, WMTSamplerInfo* info);
+
+    // ============================================================
+    //  Phase 3: MTLFence
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newFence")]
+    public static partial nuint MTLDevice_newFence(nuint device);
+
+    // ============================================================
+    //  Phase 3: MTLRenderCommandEncoder 扩展
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setVertexBytes")]
+    public static unsafe partial void MTLRenderCommandEncoder_setVertexBytes(nuint encoder, void* bytes, ulong length, ulong index);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setFragmentBuffer")]
+    public static partial void MTLRenderCommandEncoder_setFragmentBuffer(nuint encoder, nuint buffer, ulong offset, ulong index);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setFragmentBytes")]
+    public static unsafe partial void MTLRenderCommandEncoder_setFragmentBytes(nuint encoder, void* bytes, ulong length, ulong index);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setFragmentTexture")]
+    public static partial void MTLRenderCommandEncoder_setFragmentTexture(nuint encoder, nuint texture, ulong index);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setFragmentSamplerState")]
+    public static partial void MTLRenderCommandEncoder_setFragmentSamplerState(nuint encoder, nuint sampler, ulong index);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_useResource")]
+    public static partial void MTLRenderCommandEncoder_useResource(nuint encoder, nuint resource, uint usage, uint stages);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_waitForFence")]
+    public static partial void MTLRenderCommandEncoder_waitForFence(nuint encoder, nuint fence, uint before_stages);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_updateFence")]
+    public static partial void MTLRenderCommandEncoder_updateFence(nuint encoder, nuint fence, uint after_stages);
 }

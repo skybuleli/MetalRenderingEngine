@@ -117,4 +117,40 @@ public sealed class MetalDevice : MetalObject
             return new MetalRenderPipelineState(pso);
         }
     }
+
+    // ============================================================
+    // Phase 3 工厂方法
+    // ============================================================
+
+    /// <summary>创建 MTLTexture。</summary>
+    public MetalTexture NewTexture(in WMTTextureInfo info)
+    {
+        unsafe
+        {
+            WMTTextureInfo local = info;
+            nuint h = MetalBridge.MTLDevice_newTexture(Handle, &local);
+            if (h == 0) throw new MetalException("MTLDevice newTextureWithDescriptor returned nil.");
+            return new MetalTexture(h, (uint)info.Width, (uint)info.Height);
+        }
+    }
+
+    /// <summary>创建 MTLSamplerState。</summary>
+    public MetalSamplerState NewSamplerState(in WMTSamplerInfo info)
+    {
+        unsafe
+        {
+            WMTSamplerInfo local = info;
+            nuint h = MetalBridge.MTLDevice_newSamplerState(Handle, &local);
+            if (h == 0) throw new MetalException("MTLDevice newSamplerStateWithDescriptor returned nil.");
+            return new MetalSamplerState(h);
+        }
+    }
+
+    /// <summary>创建 MTLFence。</summary>
+    public MetalFence NewFence()
+    {
+        nuint h = MetalBridge.MTLDevice_newFence(Handle);
+        if (h == 0) throw new MetalException("MTLDevice newFence returned nil.");
+        return new MetalFence(h);
+    }
 }

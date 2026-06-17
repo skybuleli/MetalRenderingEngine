@@ -87,3 +87,55 @@ public struct WMTRenderPassDesc
     public unsafe fixed byte DepthRaw[40];
     public unsafe fixed byte StencilRaw[40];
 }
+
+// ============================================================
+// Phase 3 结构体
+// ============================================================
+
+/// <summary>
+/// 纹理创建参数（C 端 <c>WMTTextureInfo</c>）。
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct WMTTextureInfo
+{
+    public int PixelFormat;
+    public int TextureType;
+    public ulong Width;
+    public ulong Height;
+    public ulong Depth;
+    public int MipmapLevels;
+    public int SampleCount;
+    public int Usage;
+    public int Options;
+}
+
+/// <summary>
+/// 采样器创建参数（C 端 <c>WMTSamplerInfo</c>）。
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct WMTSamplerInfo
+{
+    public int MinFilter;
+    public int MagFilter;
+    public int MipFilter;
+    public int SAddressMode;
+    public int TAddressMode;
+    public int RAddressMode;
+    public int MaxAnisotropy;
+    public int CompareFunction;
+    public float LodMinClamp;
+    public float LodMaxClamp;
+}
+
+/// <summary>
+/// 三维原点（C 端 <c>WMTOrigin</c>）。
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct WMTOrigin
+{
+    public ulong X;
+    public ulong Y;
+    public ulong Z;
+
+    public WMTOrigin(ulong x, ulong y, ulong z) { X = x; Y = y; Z = z; }
+}

@@ -70,3 +70,66 @@ public enum MTLStoreAction : int
     Store              = 1,
     MultisampleResolve = 2,
 }
+
+// ============================================================
+// Phase 3 枚举
+// ============================================================
+
+/// <summary>MTLTextureType 子集。</summary>
+public enum MTLTextureType : int
+{
+    Type2D = 2,
+}
+
+/// <summary>MTLTextureUsage 位标志。</summary>
+[Flags]
+public enum MTLTextureUsage : int
+{
+    ShaderRead   = 1,
+    ShaderWrite  = 2,
+    RenderTarget = 4,
+}
+
+/// <summary>MTLSamplerMinMagFilter。</summary>
+public enum MTLSamplerMinMagFilter : int
+{
+    Nearest = 0,
+    Linear  = 1,
+}
+
+/// <summary>MTLSamplerMipFilter。</summary>
+public enum MTLSamplerMipFilter : int
+{
+    NotMipmapped = 0,
+    Nearest      = 1,
+    Linear       = 2,
+}
+
+/// <summary>MTLSamplerAddressMode。</summary>
+public enum MTLSamplerAddressMode : int
+{
+    ClampToEdge   = 0,
+    Repeat        = 2,
+    MirrorRepeat  = 3,
+}
+
+/// <summary>MTLCompareFunction。</summary>
+public enum MTLCompareFunction : int
+{
+    Never    = 0,
+    Less     = 1,
+    Equal    = 2,
+    LEqual   = 3,
+    Greater  = 4,
+    NotEqual = 5,
+    GEqual   = 6,
+    Always   = 7,
+}
+
+/// <summary>MTLRenderStages 位标志。</summary>
+[Flags]
+public enum MTLRenderStages : uint
+{
+    Vertex   = 1,
+    Fragment = 2,
+}
