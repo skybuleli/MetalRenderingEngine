@@ -8,6 +8,7 @@ obj/
 *.dylib
 *.metallib
 *.dxil
+*.generated.slang
 
 # ===== .NET 中间产物 =====
 *.user
