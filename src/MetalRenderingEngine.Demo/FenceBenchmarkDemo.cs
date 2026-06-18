@@ -10,24 +10,26 @@ using MetalRenderingEngine.Platform;
 namespace MetalRenderingEngine.Demo;
 
 /// <summary>
-/// Phase 6: Fence 同步策略对比 benchmark。
-/// 模拟 triple-buffer 场景（CPU 每帧准备数据 → GPU 重 compute → 必须等 GPU 完成才能覆写 slot），
-/// 对比两种同步策略的主线程占用与帧时间：
-///   • MTLFence 模式：GPU fence + 帧末 WaitUntilCompleted 阻塞主线程
-///   • MTLSharedEvent 模式：GPU encodeWaitForEvent/encodeSignalEvent + CPU 异步回调，主线程不阻塞
-/// 量化指标：CPU 主线程占用、GPU 等待、FPS。
+/// Phase 6: Fence 同步策略对比 benchmark（三种模式）。
 ///
-/// 注意：MTLSharedEvent 在无签名命令行进程里可能不可用（GPU 沙箱），
-/// 此时 demo 自动降级为仅 MTLFence 模式并提示。
+/// 模拟 triple-buffer + 重 compute 负载，对比：
+///   • Mode 0 — MTLFence：帧末 WaitUntilCompleted 阻塞主线程
+///   • Mode 1 — GpuFence AsyncCallback：帧间异步回调，主线程不阻塞（流水线化）
+///   • Mode 2 — GpuFence BlockingWait：数据依赖同步，阻塞但精确唤醒（只等特定 value）
+///
+/// Mode 1/2 用 SharedEventPool（预分配少量 event + signaledValue 区分同步点），
+/// 避免 Metal ≤64 活跃 event 上限。适合模拟器场景（单帧数百 fence）。
+///
+/// 量化指标：CPU 帧时间、CPU 阻塞等待、GPU busy、FPS。
 /// </summary>
 internal static class FenceBenchmarkDemo
 {
     private const int WindowWidth = 800;
     private const int WindowHeight = 600;
-    private const int SlotCount = 3;          // triple-buffer
-    private const int ComputeElements = 1048576; // 1M 元素，重 compute 负载
+    private const int SlotCount = 3;              // triple-buffer
+    private const int ComputeElements = 1048576;  // 1M 元素，重 compute 负载
     private const int ThreadsPerGroup = 64;
-    private const int ComputeIterations = 32;  // 每帧 dispatch 次数（加重负载到 ~5ms）
+    private const int ComputeIterations = 32;     // 每帧 dispatch 次数（GPU ~3ms）
     private const ulong ArgumentTableBufferIndex = 2;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -42,21 +44,19 @@ internal static class FenceBenchmarkDemo
     {
         try
         {
-            Console.WriteLine("=== Phase 6: Fence Benchmark (MTLFence vs MTLSharedEvent) ===");
+            Console.WriteLine("=== Phase 6: Fence Benchmark (MTLFence / GpuFence Async / GpuFence Block) ===");
 
             using var device = MetalDevice.CreateSystemDefault();
             Console.WriteLine($"Device: {device.Name} (UMA: {device.HasUnifiedMemory})");
 
             // 检测 SharedEvent 是否可用（沙箱环境可能不可用）
-            MetalSharedEvent? sharedEvt = null;
-            MetalSharedEventListener? listener = null;
+            SharedEventPool? pool = null;
             bool sharedEventAvailable = false;
             try
             {
-                sharedEvt = device.NewSharedEvent();
-                listener = MetalSharedEventListener.Create();
+                pool = new SharedEventPool(device, eventCount: 8);
                 sharedEventAvailable = true;
-                Console.WriteLine("✅ MTLSharedEvent 可用");
+                Console.WriteLine("✅ SharedEventPool 可用（8 events）");
             }
             catch (MetalException)
             {
@@ -69,11 +69,9 @@ internal static class FenceBenchmarkDemo
             layer.SetPixelFormat(MTLPixelFormat.BGRA8Unorm);
             layer.SetDrawableSize(WindowWidth, WindowHeight);
 
-            // Compute 管线（Multiply，作为 GPU 负载）
             using var computeFn = MetalShaderLoader.GetFunction(device, "Multiply", "main");
             using var pso = device.NewComputePipelineState(computeFn);
 
-            // Triple-buffer 资源
             var buffers = new MetalBuffer[SlotCount];
             var fences = new MetalFence[SlotCount];
             for (int i = 0; i < SlotCount; i++)
@@ -82,7 +80,6 @@ internal static class FenceBenchmarkDemo
                     (ulong)(ComputeElements * sizeof(float)),
                     MTLResourceOptions.StorageModeShared);
                 fences[i] = device.NewFence();
-                // 初始化数据
                 Span<float> d = buffers[i].AsSpan<float>();
                 for (int j = 0; j < ComputeElements; j++) d[j] = 1.0f;
             }
@@ -98,22 +95,18 @@ internal static class FenceBenchmarkDemo
             ImGuiImplMetal.Init((MTLDevice*)device.Handle);
 
             // 状态
-            int mode = sharedEventAvailable ? 1 : 0;  // 0=Fence, 1=SharedEvent
+            int mode = sharedEventAvailable ? 1 : 0;
             float fps = 0;
             int fpsCounter = 0;
             long lastFpsTime = 0;
-            float cpuFrameMs = 0;       // CPU 主线程每帧总占用
-            float cpuWaitMs = 0;        // CPU 等待 GPU 的时间（阻塞部分）
-            float gpuBusyMs = 0;        // GPU compute 耗时估算
+            float cpuFrameMs = 0;
+            float cpuWaitMs = 0;
+            float gpuBusyMs = 0;
             float maxCpuWaitMs = 0;
 
-            // SharedEvent 异步回调状态：每个 slot 一个 MRE
+            // AsyncCallback 模式的 slot 就绪信号（每个 slot 一个 MRE）
             var slotReady = new ManualResetEventSlim[SlotCount];
-            for (int i = 0; i < SlotCount; i++)
-            {
-                slotReady[i] = new ManualResetEventSlim(true); // 初始可写（首帧无需等）
-            }
-            ulong sharedFrameCounter = 0;
+            for (int i = 0; i < SlotCount; i++) slotReady[i] = new ManualResetEventSlim(true);
 
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             lastFpsTime = stopwatch.ElapsedMilliseconds;
@@ -145,28 +138,35 @@ internal static class FenceBenchmarkDemo
                     ImGuiImplMetal.NewFrame((MTLRenderPassDescriptor*)rpDesc.Handle);
                     ImGui.NewFrame();
 
-                    ImGui.SetNextWindowSize(new Vector2(420, 260), ImGuiCond.FirstUseEver);
+                    ImGui.SetNextWindowSize(new Vector2(440, 280), ImGuiCond.FirstUseEver);
                     ImGui.SetNextWindowPos(new Vector2(10, 10), ImGuiCond.FirstUseEver);
                     ImGui.Begin("Phase 6 — Fence Benchmark");
                     ImGui.TextColored(new Vector4(0.4f, 1.0f, 0.4f, 1.0f), $"FPS: {fps:F1}  |  Frame: {frame}");
-                    ImGui.Text($"Compute: {ComputeElements} floats × {ComputeIterations} dispatches/frame");
+                    ImGui.Text($"Compute: {ComputeElements} floats × {ComputeIterations} dispatches");
                     ImGui.Separator();
                     if (sharedEventAvailable)
                     {
                         ImGui.RadioButton("MTLFence (blocking)", ref mode, 0);
-                        ImGui.SameLine();
-                        ImGui.RadioButton("MTLSharedEvent (async)", ref mode, 1);
+                        ImGui.RadioButton("GpuFence Async (pipeline)", ref mode, 1);
+                        ImGui.RadioButton("GpuFence Block (data dep)", ref mode, 2);
                     }
                     else
                     {
-                        ImGui.TextColored(new Vector4(1.0f, 0.6f, 0.2f, 1.0f), "SharedEvent 不可用，仅 Fence 模式");
+                        ImGui.TextColored(new Vector4(1.0f, 0.6f, 0.2f, 1.0f), "SharedEvent 不可用，仅 MTLFence");
                         mode = 0;
                     }
                     ImGui.Separator();
-                    ImGui.Text($"CPU frame time:  {cpuFrameMs:F3} ms");
-                    ImGui.Text($"CPU wait (block): {cpuWaitMs:F3} ms (max {maxCpuWaitMs:F3})");
-                    ImGui.Text($"GPU busy (est):   {gpuBusyMs:F3} ms");
-                    ImGui.Text($"CPU useful:       {cpuFrameMs - cpuWaitMs:F3} ms");
+                    ImGui.Text($"CPU frame:   {cpuFrameMs:F3} ms");
+                    ImGui.Text($"CPU wait:    {cpuWaitMs:F3} ms (max {maxCpuWaitMs:F3})");
+                    ImGui.Text($"GPU busy:    {gpuBusyMs:F3} ms");
+                    ImGui.Text($"CPU useful:  {cpuFrameMs - cpuWaitMs:F3} ms");
+                    string modeName = mode switch
+                    {
+                        0 => "MTLFence (WaitUntilCompleted 阻塞)",
+                        1 => "GpuFence Async (回调流水线)",
+                        _ => "GpuFence Block (精确唤醒)",
+                    };
+                    ImGui.Text($"Mode: {modeName}");
                     ImGui.End();
                     ImGui.Render();
 
@@ -175,104 +175,83 @@ internal static class FenceBenchmarkDemo
                     int slot = frame % SlotCount;
 
                     using var cmdbuf = queue.CommandBuffer();
+                    var uav = new UavDescriptor
+                    {
+                        GpuAddress = buffers[slot].GpuAddress,
+                        Length = buffers[slot].Length,
+                        Stride = sizeof(float),
+                    };
+                    int groups = ComputeElements / ThreadsPerGroup;
 
                     if (mode == 0)
                     {
-                        // ── MTLFence 模式：帧末 WaitUntilCompleted 阻塞主线程 ──
-                        using (var cEnc = cmdbuf.ComputeCommandEncoder())
-                        {
-                            cEnc.SetComputePipelineState(pso);
-                            cEnc.UseResource(buffers[slot], MTLResourceUsage.Read | MTLResourceUsage.Write);
-                            var uav = new UavDescriptor
-                            {
-                                GpuAddress = buffers[slot].GpuAddress,
-                                Length = buffers[slot].Length,
-                                Stride = sizeof(float),
-                            };
-                            cEnc.SetBytes(uav, ArgumentTableBufferIndex);
-                            int groups = ComputeElements / ThreadsPerGroup;
-                            for (int iter = 0; iter < ComputeIterations; iter++)
-                            {
-                                cEnc.DispatchThreadgroups(
-                                    new WMTSize((ulong)groups, 1, 1),
-                                    new WMTSize(ThreadsPerGroup, 1, 1));
-                            }
-                            cEnc.EndEncoding();
-                        }
-
-                        // ImGui overlay（commit 之前编码）
+                        // ── Mode 0: MTLFence — 帧末 WaitUntilCompleted 阻塞主线程 ──
+                        EncodeCompute(cmdbuf, pso, buffers[slot], uav, groups);
                         EncodeImGuiOverlay(cmdbuf, drawable);
-
                         cmdbuf.PresentDrawable(drawable);
                         cmdbuf.Commit();
 
-                        // 阻塞等待 GPU 完成（主线程空等）
                         waitStart = stopwatch.ElapsedTicks;
                         cmdbuf.WaitUntilCompleted();
                         waitEnd = stopwatch.ElapsedTicks;
                     }
-                    else
+                    else if (mode == 1)
                     {
-                        // ── MTLSharedEvent 模式：异步回调，主线程不阻塞 ──
-                        // 等 slot 可写（上一帧该 slot 的 GPU 工作完成）
+                        // ── Mode 1: GpuFence AsyncCallback — 帧间异步回调，主线程不阻塞 ──
                         waitStart = stopwatch.ElapsedTicks;
-                        slotReady[slot].Wait();
+                        slotReady[slot].Wait();       // 等上一帧该 slot 完成
                         slotReady[slot].Reset();
                         waitEnd = stopwatch.ElapsedTicks;
 
-                        // 注册本帧完成回调（signal value = ++sharedFrameCounter）
-                        sharedFrameCounter++;
-                        ulong signalValue = sharedFrameCounter;
-                        sharedEvt!.NotifyListener(listener!, signalValue, v =>
-                        {
-                            // listener 后台线程触发：标记 slot 可写
-                            slotReady[slot].Set();
-                        });
-
-                        // GPU：先 wait 前一轮该 slot 的完成（value = signalValue - SlotCount）
-                        if (signalValue > (ulong)SlotCount)
-                        {
-                            cmdbuf.EncodeWaitForEvent(sharedEvt, signalValue - (ulong)SlotCount);
-                        }
+                        var fence = GpuFence.Create(pool!);
+                        int capturedSlot = slot;
 
                         using (var cEnc = cmdbuf.ComputeCommandEncoder())
                         {
                             cEnc.SetComputePipelineState(pso);
                             cEnc.UseResource(buffers[slot], MTLResourceUsage.Read | MTLResourceUsage.Write);
-                            var uav = new UavDescriptor
-                            {
-                                GpuAddress = buffers[slot].GpuAddress,
-                                Length = buffers[slot].Length,
-                                Stride = sizeof(float),
-                            };
                             cEnc.SetBytes(uav, ArgumentTableBufferIndex);
-                            int groups = ComputeElements / ThreadsPerGroup;
                             for (int iter = 0; iter < ComputeIterations; iter++)
-                            {
-                                cEnc.DispatchThreadgroups(
-                                    new WMTSize((ulong)groups, 1, 1),
-                                    new WMTSize(ThreadsPerGroup, 1, 1));
-                            }
+                                cEnc.DispatchThreadgroups(new WMTSize((ulong)groups, 1, 1), new WMTSize(ThreadsPerGroup, 1, 1));
                             cEnc.EndEncoding();
                         }
-
-                        // GPU：完成后 signal
-                        cmdbuf.EncodeSignalEvent(sharedEvt, signalValue);
-
-                        // ImGui overlay（commit 之前编码）
+                        fence.Signal(cmdbuf);          // GPU 完成后 signal
+                        fence.WaitAsync(() => slotReady[capturedSlot].Set());  // 回调标记 slot 可写
                         EncodeImGuiOverlay(cmdbuf, drawable);
-
                         cmdbuf.PresentDrawable(drawable);
                         cmdbuf.Commit();
-                        // 不调 WaitUntilCompleted —— 主线程立即继续下一帧
+                        // 不 WaitUntilCompleted —— 主线程立即继续
+                    }
+                    else
+                    {
+                        // ── Mode 2: GpuFence BlockingWait — 数据依赖，阻塞但精确唤醒 ──
+                        // 模拟"游戏 CPU 必须读 GPU 结果"：signal 后 CPU 阻塞等该 value
+                        var fence = GpuFence.Create(pool!);
+                        using (var cEnc = cmdbuf.ComputeCommandEncoder())
+                        {
+                            cEnc.SetComputePipelineState(pso);
+                            cEnc.UseResource(buffers[slot], MTLResourceUsage.Read | MTLResourceUsage.Write);
+                            cEnc.SetBytes(uav, ArgumentTableBufferIndex);
+                            for (int iter = 0; iter < ComputeIterations; iter++)
+                                cEnc.DispatchThreadgroups(new WMTSize((ulong)groups, 1, 1), new WMTSize(ThreadsPerGroup, 1, 1));
+                            cEnc.EndEncoding();
+                        }
+                        fence.Signal(cmdbuf);
+                        EncodeImGuiOverlay(cmdbuf, drawable);
+                        cmdbuf.PresentDrawable(drawable);
+                        cmdbuf.Commit();
+
+                        // 阻塞等特定 value（比 WaitUntilCompleted 更精确——只等 signal 那一刻）
+                        waitStart = stopwatch.ElapsedTicks;
+                        fence.Wait(5000);
+                        waitEnd = stopwatch.ElapsedTicks;
                     }
 
                     long frameEnd = stopwatch.ElapsedTicks;
                     cpuFrameMs = (float)(frameEnd - frameStart) * 1000f / System.Diagnostics.Stopwatch.Frequency;
                     cpuWaitMs = (float)(waitEnd - waitStart) * 1000f / System.Diagnostics.Stopwatch.Frequency;
                     if (cpuWaitMs > maxCpuWaitMs) maxCpuWaitMs = cpuWaitMs;
-                    // GPU busy 估算：Fence 模式下 = cpuWaitMs；SharedEvent 模式下无法直接测，用 CPU frame - CPU useful 估算
-                    gpuBusyMs = mode == 0 ? cpuWaitMs : Math.Max(0, cpuFrameMs - (cpuFrameMs - cpuWaitMs));
+                    gpuBusyMs = mode == 1 ? Math.Max(0, cpuFrameMs - (cpuFrameMs - cpuWaitMs)) : cpuWaitMs;
                 }
                 finally
                 {
@@ -288,8 +267,7 @@ internal static class FenceBenchmarkDemo
                     fps = fpsCounter * 1000f / (nowMs - lastFpsTime);
                     fpsCounter = 0;
                     lastFpsTime = nowMs;
-                    // 控制台汇总（供 bench 脚本采集）
-                    Console.WriteLine($"[fence-bench] mode={(mode==0?"Fence":"SharedEvent")} fps={fps:F1} " +
+                    Console.WriteLine($"[fence-bench] mode={mode} fps={fps:F1} " +
                         $"cpuFrame={cpuFrameMs:F2}ms cpuWait={cpuWaitMs:F2}ms gpuBusy={gpuBusyMs:F2}ms");
                 }
             }
@@ -297,8 +275,7 @@ internal static class FenceBenchmarkDemo
         ExitLoop:
             ImGuiImplMetal.Shutdown();
             ImGuiImplOSX.Shutdown();
-            sharedEvt?.Dispose();
-            listener?.Dispose();
+            pool?.Dispose();
             Console.WriteLine($"✅ Rendered {frame} frames.");
             return 0;
         }
@@ -314,7 +291,18 @@ internal static class FenceBenchmarkDemo
         }
     }
 
-    /// <summary>编码 ImGui overlay pass（在 commit 之前调用）。</summary>
+    private static void EncodeCompute(MetalCommandBuffer cmdbuf, MetalComputePipelineState pso,
+        MetalBuffer buffer, UavDescriptor uav, int groups)
+    {
+        using var cEnc = cmdbuf.ComputeCommandEncoder();
+        cEnc.SetComputePipelineState(pso);
+        cEnc.UseResource(buffer, MTLResourceUsage.Read | MTLResourceUsage.Write);
+        cEnc.SetBytes(uav, ArgumentTableBufferIndex);
+        for (int iter = 0; iter < ComputeIterations; iter++)
+            cEnc.DispatchThreadgroups(new WMTSize((ulong)groups, 1, 1), new WMTSize(ThreadsPerGroup, 1, 1));
+        cEnc.EndEncoding();
+    }
+
     private static unsafe void EncodeImGuiOverlay(MetalCommandBuffer cmdbuf, MetalDrawable drawable)
     {
         var uiPassDesc = BuildRenderPassDesc(drawable.Texture.Handle, clear: false);
