@@ -546,21 +546,43 @@ uint64_t MTLTexture_height(mtl_handle_t texture) {
     return (uint64_t)tex.height;
 }
 
+/* 查 MTLPixelFormat 每像素字节数（仅覆盖本项目用到的格式）。
+ * MTLTexture 协议无 bytesPerRow 属性，需根据 pixelFormat + width 自算。 */
+static NSUInteger pixel_format_bytes_per_pixel(MTLPixelFormat pf) {
+    switch (pf) {
+    case MTLPixelFormatR8Unorm:        return 1;
+    case MTLPixelFormatRGBA8Unorm:
+    case MTLPixelFormatBGRA8Unorm:     return 4;
+    case MTLPixelFormatRGBA32Float:    return 16;
+    case MTLPixelFormatDepth32Float:   return 4;
+    default:                           return 4;  /* 保守默认 */
+    }
+}
+
 uint64_t MTLTexture_bytesPerRow(mtl_handle_t texture, uint64_t mip_level) {
     if (texture == MTL_NULL_HANDLE) return 0;
-    id tex = H2ID(texture);
-    return (uint64_t)[(id<MTLTexture>)tex bytesPerRow];
+    id<MTLTexture> tex = H2ID(texture);
+    NSUInteger width = [tex width];
+    NSUInteger bpp = pixel_format_bytes_per_pixel([tex pixelFormat]);
+    /* mip_level > 0 时宽度右移，此处仅 mipmap level 0 准确；高 level 需调用方注意 */
+    for (uint64_t i = 0; i < mip_level && width > 1; i++) width = (width + 1) / 2;
+    return (uint64_t)(width * bpp);
 }
 
 uint64_t MTLTexture_getBytes(mtl_handle_t texture, void *dst, uint64_t dst_size, uint64_t mip_level) {
     if (texture == MTL_NULL_HANDLE || dst == NULL || dst_size == 0) return 0;
-    id tex = H2ID(texture);
-    NSUInteger width = (NSUInteger)[(id<MTLTexture>)tex width];
-    NSUInteger height = (NSUInteger)[(id<MTLTexture>)tex height];
-    NSUInteger bytesPerRow = [(id<MTLTexture>)tex bytesPerRow];
-    NSUInteger requiredSize = bytesPerRow * height;
+    id<MTLTexture> tex = H2ID(texture);
+    NSUInteger width = [tex width];
+    NSUInteger height = [tex height];
+    NSUInteger bpp = pixel_format_bytes_per_pixel([tex pixelFormat]);
+    /* 简化：仅在 mip level 0 准确；高 mipmap 需按 (w+1)/2 递减 */
+    NSUInteger level = (NSUInteger)mip_level;
+    NSUInteger w = width, h = height;
+    for (NSUInteger i = 0; i < level; i++) { if (w > 1) w = (w + 1) / 2; if (h > 1) h = (h + 1) / 2; }
+    NSUInteger bytesPerRow = w * bpp;
+    NSUInteger requiredSize = bytesPerRow * h;
     if (dst_size < requiredSize) return 0;
-    MTLRegion region = MTLRegionMake2D(0, 0, width, height);
+    MTLRegion region = MTLRegionMake2D(0, 0, w, h);
     [tex getBytes:dst bytesPerRow:bytesPerRow fromRegion:region mipmapLevel:(NSUInteger)mip_level];
     return (uint64_t)requiredSize;
 }
@@ -727,4 +749,118 @@ mtl_handle_t MTLRenderPassDescriptor_createForTexture(mtl_handle_t texture) {
 
 void MTLRenderPassDescriptor_release(mtl_handle_t desc) {
     if (desc != MTL_NULL_HANDLE) CFRelease((CFTypeRef)(void*)desc);
+}
+
+/* ============================================================
+ *  Phase 6: 批量命令编码器回放
+ *  参照 DXMT winemetal_unix.c:786-869 的 while+switch 模式。
+ *  每个回放函数只 H2ID(encoder) 一次，遍历链表按 type 分发。
+ * ============================================================ */
+
+/* Compute 回放：拆成 helper 以满足 ≤20 行约束（AGENTS.md §4.2）。
+ * threadgroup_size 随 SetPipelineState 缓存，供后续 Dispatch 消费
+ * —— 与 DXMT 行为一致（链表内 SetPSO 必须先于 Dispatch）。 */
+static void replay_compute_cmd(id<MTLComputeCommandEncoder> e,
+                               const struct wmtcmd_base *cmd,
+                               MTLSize *threadgroup_size) {
+    switch ((enum WMTComputeCmdType)cmd->type) {
+    case WMTComputeCmdSetPipelineState: {
+        const struct wmtcmd_compute_setpso *b = (const void*)cmd;
+        [e setComputePipelineState:H2ID(b->pso)];
+        threadgroup_size->width  = (NSUInteger)b->threadgroup_size.width;
+        threadgroup_size->height = (NSUInteger)b->threadgroup_size.height;
+        threadgroup_size->depth  = (NSUInteger)b->threadgroup_size.depth;
+        break;
+    }
+    case WMTComputeCmdUseResource: {
+        const struct wmtcmd_compute_useresource *b = (const void*)cmd;
+        [e useResource:(id<MTLResource>)H2ID(b->resource) usage:(MTLResourceUsage)b->usage];
+        break;
+    }
+    case WMTComputeCmdSetBytes: {
+        const struct wmtcmd_compute_setbytes *b = (const void*)cmd;
+        [e setBytes:b->bytes length:(NSUInteger)b->length atIndex:(NSUInteger)b->index];
+        break;
+    }
+    case WMTComputeCmdDispatch: {
+        const struct wmtcmd_compute_dispatch *b = (const void*)cmd;
+        MTLSize g = MTLSizeMake((NSUInteger)b->threadgroups_per_grid.width,
+                                (NSUInteger)b->threadgroups_per_grid.height,
+                                (NSUInteger)b->threadgroups_per_grid.depth);
+        [e dispatchThreadgroups:g threadsPerThreadgroup:*threadgroup_size];
+        break;
+    }
+    case WMTComputeCmdEndEncoding:
+        [e endEncoding];
+        break;
+    default:
+        break;  /* 未知类型静默跳过（release 保守策略） */
+    }
+}
+
+void MTLComputeCommandEncoder_encodeCommands(mtl_handle_t encoder, const struct wmtcmd_base *head) {
+    if (encoder == MTL_NULL_HANDLE || head == NULL) return;
+    id<MTLComputeCommandEncoder> e = H2ID(encoder);
+    MTLSize threadgroup_size = {0, 0, 0};
+    while (head) {
+        replay_compute_cmd(e, head, &threadgroup_size);
+        head = head->next;
+    }
+}
+
+/* Render 回放：同理拆 helper。 */
+static void replay_render_cmd(id<MTLRenderCommandEncoder> e,
+                              const struct wmtcmd_base *cmd) {
+    switch ((enum WMTRenderCmdType)cmd->type) {
+    case WMTRenderCmdSetPipelineState: {
+        const struct wmtcmd_render_setpso *b = (const void*)cmd;
+        [e setRenderPipelineState:H2ID(b->pso)];
+        break;
+    }
+    case WMTRenderCmdSetViewport: {
+        const struct wmtcmd_render_setviewport *b = (const void*)cmd;
+        MTLViewport vp = { b->x, b->y, b->w, b->h, b->znear, b->zfar };
+        [e setViewport:vp];
+        break;
+    }
+    case WMTRenderCmdSetVertexBytes: {
+        const struct wmtcmd_render_setbytes *b = (const void*)cmd;
+        [e setVertexBytes:b->bytes length:(NSUInteger)b->length atIndex:(NSUInteger)b->index];
+        break;
+    }
+    case WMTRenderCmdSetFragmentBytes: {
+        const struct wmtcmd_render_setbytes *b = (const void*)cmd;
+        [e setFragmentBytes:b->bytes length:(NSUInteger)b->length atIndex:(NSUInteger)b->index];
+        break;
+    }
+    case WMTRenderCmdUseResource: {
+        const struct wmtcmd_render_useresource *b = (const void*)cmd;
+        [e useResource:(id<MTLResource>)H2ID(b->resource)
+                 usage:(MTLResourceUsage)b->usage
+                stages:(MTLRenderStages)b->stages];
+        break;
+    }
+    case WMTRenderCmdDrawPrimitives: {
+        const struct wmtcmd_render_draw *b = (const void*)cmd;
+        /* primitive_type=0 → Triangle（与现有 drawPrimitives 约定一致） */
+        [e drawPrimitives:MTLPrimitiveTypeTriangle
+              vertexStart:(NSUInteger)b->vertex_start
+              vertexCount:(NSUInteger)b->vertex_count];
+        break;
+    }
+    case WMTRenderCmdEndEncoding:
+        [e endEncoding];
+        break;
+    default:
+        break;
+    }
+}
+
+void MTLRenderCommandEncoder_encodeCommands(mtl_handle_t encoder, const struct wmtcmd_base *head) {
+    if (encoder == MTL_NULL_HANDLE || head == NULL) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    while (head) {
+        replay_render_cmd(e, head);
+        head = head->next;
+    }
 }

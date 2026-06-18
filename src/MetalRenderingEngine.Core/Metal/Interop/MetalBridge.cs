@@ -286,4 +286,14 @@ internal static partial class MetalBridge
 
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderPassDescriptor_release")]
     public static partial void MTLRenderPassDescriptor_release(nuint desc);
+
+    // ============================================================
+    //  Phase 6: 批量命令编码器回放（wmtcmd 链表一次 P/Invoke）
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_encodeCommands")]
+    public static unsafe partial void MTLComputeCommandEncoder_encodeCommands(nuint encoder, WMTCommandBase* head);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_encodeCommands")]
+    public static unsafe partial void MTLRenderCommandEncoder_encodeCommands(nuint encoder, WMTCommandBase* head);
 }

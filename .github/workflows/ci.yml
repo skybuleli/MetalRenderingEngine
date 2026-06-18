@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    # macos-14 = Apple Silicon (M1) hosted runner
+    runs-on: macos-14
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install slangc (Slang shader compiler)
+        # brew 无 Slang shader compiler formula，从官方 release 安装
+        run: |
+          SLANG_VERSION="2025.5"
+          curl -fsSL "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-macos-arm64.zip" -o /tmp/slang.zip
+          unzip -q /tmp/slang.zip -d /tmp/slang
+          echo "/tmp/slang/bin" >> "$GITHUB_PATH"
+
+      - name: Verify toolchain
+        run: |
+          echo "clang: $(clang --version | head -1)"
+          echo "slangc: $(which slangc)"
+          echo "metal-shaderconverter: $(which metal-shaderconverter)"
+          slangc --version 2>&1 | head -1 || true
+          metal-shaderconverter --version 2>&1 | head -1 || true
+
+      - name: Build bridge (libmetal_bridge.dylib)
+        run: ./build/build_bridge.sh
+
+      - name: Compile shaders
+        run: ./build/compile_shaders.sh
+
+      - name: Build solution
+        run: dotnet build MetalRenderingEngine.sln -c Release
+
+      - name: Run tests
+        run: dotnet test MetalRenderingEngine.sln -c Release --no-build --verbosity normal

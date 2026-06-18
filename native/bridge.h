@@ -499,6 +499,112 @@ void MTLArgumentEncoder_encodeTextureSampler(mtl_handle_t encoder,
 mtl_handle_t MTLRenderPassDescriptor_createForTexture(mtl_handle_t texture);
 void MTLRenderPassDescriptor_release(mtl_handle_t desc);
 
+/* ============================================================
+ *  Phase 6: 批量命令编码器（wmtcmd 链表回放）
+ *
+ *  把多个 encoder 命令打包成 POD 结构体单链表，一次 P/Invoke 回放，
+ *  将 1000 draw/帧的 P/Invoke 从 ~1000 降到 1。设计参照 DXMT
+ *  winemetal.h:876-1110 的 wmtcmd_base + 各 wmtcmd_* 结构体。
+ *  每个命令结构体首部必须是 wmtcmd_base（type + next），bridge.m
+ *  按 type switch 分发到 ObjC 调用。
+ * ============================================================ */
+
+/* 命令头：16 字节，所有命令结构体的公共前缀 */
+struct wmtcmd_base {
+    uint16_t type;          /* WMTComputeCmdType / WMTRenderCmdType */
+    uint16_t reserved[3];   /* 填充到 8 字节，保证 next 指针 8 字节对齐 */
+    const struct wmtcmd_base *next;  /* 单链表 next，NULL 表示链尾 */
+};
+
+/* Compute 命令类型 */
+enum WMTComputeCmdType {
+    WMTComputeCmdEndEncoding    = 0,
+    WMTComputeCmdSetPipelineState,
+    WMTComputeCmdUseResource,
+    WMTComputeCmdSetBytes,
+    WMTComputeCmdDispatch,
+};
+
+struct wmtcmd_compute_setpso {
+    struct wmtcmd_base base;
+    mtl_handle_t pso;
+    struct WMTSize threadgroup_size;  /* 随 PSO 缓存，供后续 Dispatch 使用 */
+};
+
+struct wmtcmd_compute_useresource {
+    struct wmtcmd_base base;
+    mtl_handle_t resource;
+    uint32_t usage;  /* MTLResourceUsage 位或 */
+};
+
+struct wmtcmd_compute_setbytes {
+    struct wmtcmd_base base;
+    const void *bytes;   /* 外挂 payload buffer（调用方保持存活到回放返回） */
+    uint64_t length;
+    uint64_t index;
+};
+
+struct wmtcmd_compute_dispatch {
+    struct wmtcmd_base base;
+    struct WMTSize threadgroups_per_grid;
+    struct WMTSize threads_per_threadgroup;
+};
+
+struct wmtcmd_compute_endencoding {
+    struct wmtcmd_base base;
+};
+
+/* Render 命令类型 */
+enum WMTRenderCmdType {
+    WMTRenderCmdEndEncoding     = 0,
+    WMTRenderCmdSetPipelineState,
+    WMTRenderCmdSetViewport,
+    WMTRenderCmdSetVertexBytes,
+    WMTRenderCmdSetFragmentBytes,
+    WMTRenderCmdUseResource,
+    WMTRenderCmdDrawPrimitives,
+};
+
+struct wmtcmd_render_setpso {
+    struct wmtcmd_base base;
+    mtl_handle_t pso;
+};
+
+struct wmtcmd_render_setviewport {
+    struct wmtcmd_base base;
+    float x, y, w, h, znear, zfar;
+};
+
+struct wmtcmd_render_setbytes {
+    struct wmtcmd_base base;
+    const void *bytes;   /* 外挂 payload buffer */
+    uint64_t length;
+    uint64_t index;
+};
+
+struct wmtcmd_render_useresource {
+    struct wmtcmd_base base;
+    mtl_handle_t resource;
+    uint32_t usage;    /* MTLResourceUsage 位或 */
+    uint32_t stages;   /* MTLRenderStages 位或 */
+};
+
+struct wmtcmd_render_draw {
+    struct wmtcmd_base base;
+    int primitive_type;     /* 0=Triangle（与现有 drawPrimitives 约定一致） */
+    uint64_t vertex_start;
+    uint64_t vertex_count;
+};
+
+struct wmtcmd_render_endencoding {
+    struct wmtcmd_base base;
+};
+
+/* 回放入口点：遍历链表，按 type switch 分发到 ObjC 调用。
+ * encoder 句柄只 H2ID 一次；链表内存由调用方持有，回放返回后可释放。 */
+void MTLComputeCommandEncoder_encodeCommands(mtl_handle_t encoder, const struct wmtcmd_base *head);
+void MTLRenderCommandEncoder_encodeCommands(mtl_handle_t encoder, const struct wmtcmd_base *head);
+
 #ifdef __cplusplus
 }
 #endif

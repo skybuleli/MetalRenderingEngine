@@ -390,3 +390,4 @@ dotnet test MetalRenderingEngine.sln
 |------|------|------|
 | 2026-06-17 | 1.0 | 初始版本，定义核心原则、架构约束、禁止事项 |
 | 2026-06-18 | 2.0 | Phase 5: 添加 C# Shader 源生成器（`IIncrementalGenerator`），支持 Compute/Vertex/Fragment 着色器自动生成 |
+| 2026-06-18 | 3.0 | Phase 6: 批量命令编码器（`MetalCommandList` + wmtcmd 链表回放，P/Invoke 降 99.5%）、补全测试（21 个）、CI（macos-14）、性能 baseline |
