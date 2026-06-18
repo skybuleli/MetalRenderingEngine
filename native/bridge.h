@@ -457,6 +457,47 @@ mtl_handle_t MTLDevice_newSamplerState(mtl_handle_t device, const struct WMTSamp
 mtl_handle_t MTLDevice_newFence(mtl_handle_t device);
 
 /* ============================================================
+ *  Phase 6: MTLSharedEvent + CPU fence（跨 CPU/GPU 同步 + 异步通知）
+ *
+ *  与 MTLFence 的区别：MTLFence 纯 GPU 侧、无 signaled value、CPU 无法等待；
+ *  MTLSharedEvent 有单调 signaledValue，CPU 可阻塞等待或异步回调，
+ *  支持 GPU encodeSignalEvent/encodeWaitForEvent 跨 command buffer 同步。
+ *  参照 DXMT winemetal_unix.c:2471-2498 的 listener + CFRunLoop 模式。
+ * ============================================================ */
+
+/* 回调函数指针类型：GPU signal 到指定 value 时在 listener 后台线程触发。
+ * user_data 由调用方透传（C# 端用 GCHandle 持有）。 */
+typedef void (*shared_event_callback_t)(void *user_data, uint64_t value);
+
+/* 创建 MTLSharedEvent（retained，初始 signaledValue=0） */
+mtl_handle_t MTLDevice_newSharedEvent(mtl_handle_t device);
+
+/* 读取当前已 signal 的值（CPU 侧，非阻塞） */
+uint64_t MTLSharedEvent_signaledValue(mtl_handle_t event);
+
+/* CPU 阻塞等待 event 达到 value（timeout_ms=0 表示无限等待）。
+ * 返回 1=达到，0=超时 */
+int MTLSharedEvent_waitUntilSignaledValue(mtl_handle_t event, uint64_t value, uint64_t timeout_ms);
+
+/* GPU 命令缓冲：执行到此处时给 event 赋 value（GPU 侧 signal） */
+void MTLCommandBuffer_encodeSignalEvent(mtl_handle_t cmdbuf, mtl_handle_t event, uint64_t value);
+
+/* GPU 命令缓冲：执行到此处时阻塞直到 event.signaledValue >= value */
+void MTLCommandBuffer_encodeWaitForEvent(mtl_handle_t cmdbuf, mtl_handle_t event, uint64_t value);
+
+/* 创建 SharedEventListener：内部启动后台 CFRunLoop 线程承载 notifyListener 回调。
+ * 返回的句柄持有 listener + 后台线程；释放时调 MTLSharedEventListener_release。 */
+mtl_handle_t MTLSharedEventListener_create(void);
+
+/* 释放 listener：停止后台 runloop 并 join 线程 */
+void MTLSharedEventListener_release(mtl_handle_t listener);
+
+/* 注册异步通知：当 GPU signal 到 value 时，在 listener 的后台线程调 callback。
+ * callback/user_data 的生命周期由调用方管理（C# 端用 GCHandle 钉住）。 */
+void MTLSharedEvent_notifyListener(mtl_handle_t event, mtl_handle_t listener,
+                                    uint64_t value, shared_event_callback_t callback, void *user_data);
+
+/* ============================================================
  *  Phase 3: MTLRenderCommandEncoder 扩展
  * ============================================================ */
 

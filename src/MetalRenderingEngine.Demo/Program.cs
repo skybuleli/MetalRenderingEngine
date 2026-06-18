@@ -22,7 +22,8 @@ internal static class Program
             if (mode == "textured") return TexturedApp.Run();
             if (mode == "imgui") return ImGuiApp.Run();
             if (mode == "instanced") return InstancedTrianglesDemo.Run();
-            Console.Error.WriteLine("Usage: dotnet run -- [compute|compute-gen|mandelbrot|triangle|textured|imgui|instanced]");
+            if (mode == "fence-bench") return FenceBenchmarkDemo.Run();
+            Console.Error.WriteLine("Usage: dotnet run -- [compute|compute-gen|mandelbrot|triangle|textured|imgui|instanced|fence-bench]");
             return 1;
         }
         catch (MetalException ex)

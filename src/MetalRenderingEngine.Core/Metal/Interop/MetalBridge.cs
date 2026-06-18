@@ -288,6 +288,38 @@ internal static partial class MetalBridge
     public static partial void MTLRenderPassDescriptor_release(nuint desc);
 
     // ============================================================
+    //  Phase 6: MTLSharedEvent + SharedEventListener（跨 CPU/GPU 同步）
+    // ============================================================
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void SharedEventCallback(nuint userData, ulong value);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newSharedEvent")]
+    public static partial nuint MTLDevice_newSharedEvent(nuint device);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLSharedEvent_signaledValue")]
+    public static partial ulong MTLSharedEvent_signaledValue(nuint evt);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLSharedEvent_waitUntilSignaledValue")]
+    public static partial int MTLSharedEvent_waitUntilSignaledValue(nuint evt, ulong value, ulong timeout_ms);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_encodeSignalEvent")]
+    public static partial void MTLCommandBuffer_encodeSignalEvent(nuint cmdbuf, nuint evt, ulong value);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_encodeWaitForEvent")]
+    public static partial void MTLCommandBuffer_encodeWaitForEvent(nuint cmdbuf, nuint evt, ulong value);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLSharedEventListener_create")]
+    public static partial nuint MTLSharedEventListener_create();
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLSharedEventListener_release")]
+    public static partial void MTLSharedEventListener_release(nuint listener);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLSharedEvent_notifyListener")]
+    public static unsafe partial void MTLSharedEvent_notifyListener(
+        nuint evt, nuint listener, ulong value, SharedEventCallback callback, nuint userData);
+
+    // ============================================================
     //  Phase 6: 批量命令编码器回放（wmtcmd 链表一次 P/Invoke）
     // ============================================================
 

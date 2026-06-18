@@ -153,4 +153,12 @@ public sealed class MetalDevice : MetalObject
         if (h == 0) throw new MetalException("MTLDevice newFence returned nil.");
         return new MetalFence(h);
     }
+
+    /// <summary>创建 MTLSharedEvent（初始 signaledValue=0）。</summary>
+    public MetalSharedEvent NewSharedEvent()
+    {
+        nuint h = MetalBridge.MTLDevice_newSharedEvent(Handle);
+        if (h == 0) throw new MetalException("MTLDevice newSharedEvent returned nil.");
+        return new MetalSharedEvent(h);
+    }
 }

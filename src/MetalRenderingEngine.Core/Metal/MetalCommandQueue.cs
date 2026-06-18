@@ -27,6 +27,20 @@ public sealed class MetalCommandBuffer : MetalObject
     /// <summary>阻塞直到 GPU 执行完毕。</summary>
     public void WaitUntilCompleted() => MetalBridge.MTLCommandBuffer_waitUntilCompleted(Handle);
 
+    /// <summary>GPU 执行到此处时给 shared event 赋 value（GPU 侧 signal）。</summary>
+    public void EncodeSignalEvent(MetalSharedEvent evt, ulong value)
+    {
+        ArgumentNullException.ThrowIfNull(evt);
+        MetalBridge.MTLCommandBuffer_encodeSignalEvent(Handle, evt.Handle, value);
+    }
+
+    /// <summary>GPU 执行到此处时阻塞直到 event.SignaledValue &gt;= value。</summary>
+    public void EncodeWaitForEvent(MetalSharedEvent evt, ulong value)
+    {
+        ArgumentNullException.ThrowIfNull(evt);
+        MetalBridge.MTLCommandBuffer_encodeWaitForEvent(Handle, evt.Handle, value);
+    }
+
     /// <summary>当前状态。</summary>
     public MTLCommandBufferStatus Status
         => (MTLCommandBufferStatus)MetalBridge.MTLCommandBuffer_status(Handle);

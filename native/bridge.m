@@ -18,6 +18,8 @@
 #import <Foundation/Foundation.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import <objc/message.h>
+#include <pthread.h>
+#include <unistd.h>
 #include "bridge.h"
 
 /* 把 mtl_handle_t 转回 ObjC id（不改变引用计数） */
@@ -649,6 +651,105 @@ mtl_handle_t MTLDevice_newFence(mtl_handle_t device) {
     id<MTLDevice> dev = H2ID(device);
     id<MTLFence> fence = [dev newFence];
     return fence ? ID2H(fence) : MTL_NULL_HANDLE;
+}
+
+/* ============================================================
+ *  Phase 6: MTLSharedEvent + SharedEventListener
+ *  参照 DXMT winemetal_unix.c:2471-2498 的 listener + CFRunLoop 模式。
+ * ============================================================ */
+
+mtl_handle_t MTLDevice_newSharedEvent(mtl_handle_t device) {
+    if (device == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
+    id<MTLDevice> dev = H2ID(device);
+    id<MTLSharedEvent> evt = [dev newSharedEvent];
+    return evt ? ID2H(evt) : MTL_NULL_HANDLE;
+}
+
+uint64_t MTLSharedEvent_signaledValue(mtl_handle_t event) {
+    if (event == MTL_NULL_HANDLE) return 0;
+    id<MTLSharedEvent> e = H2ID(event);
+    return (uint64_t)[e signaledValue];
+}
+
+int MTLSharedEvent_waitUntilSignaledValue(mtl_handle_t event, uint64_t value, uint64_t timeout_ms) {
+    if (event == MTL_NULL_HANDLE) return 0;
+    id<MTLSharedEvent> e = H2ID(event);
+    /* timeout_ms=0 在本封装里表示无限等待（Metal API 用 NSUInteger max） */
+    NSUInteger timeout = (timeout_ms == 0) ? NSUIntegerMax : (NSUInteger)timeout_ms;
+    BOOL ok = [e waitUntilSignaledValue:value timeoutMS:timeout];
+    return ok ? 1 : 0;
+}
+
+void MTLCommandBuffer_encodeSignalEvent(mtl_handle_t cmdbuf, mtl_handle_t event, uint64_t value) {
+    if (cmdbuf == MTL_NULL_HANDLE || event == MTL_NULL_HANDLE) return;
+    id<MTLCommandBuffer> cb = H2ID(cmdbuf);
+    [cb encodeSignalEvent:H2ID(event) value:value];
+}
+
+void MTLCommandBuffer_encodeWaitForEvent(mtl_handle_t cmdbuf, mtl_handle_t event, uint64_t value) {
+    if (cmdbuf == MTL_NULL_HANDLE || event == MTL_NULL_HANDLE) return;
+    id<MTLCommandBuffer> cb = H2ID(cmdbuf);
+    [cb encodeWaitForEvent:H2ID(event) value:value];
+}
+
+/* SharedEventListener：内部持有 ObjC listener + 后台 CFRunLoop 线程。
+ * 用结构体打包，release 时停止 runloop 并 join 线程。 */
+typedef struct {
+    MTLSharedEventListener *listener;
+    CFRunLoopRef runloop;
+    pthread_t thread;
+    _Bool stopped;
+} shared_event_listener_state;
+
+static void *listener_thread_func(void *arg) {
+    shared_event_listener_state *st = (shared_event_listener_state *)arg;
+    st->runloop = CFRunLoopGetCurrent();
+    CFRetain(st->runloop);
+    /* 加一个 dummy source 保活 runloop（参照 DXMT winemetal_unix.c:2480-2483） */
+    CFRunLoopSourceContext ctx = {0};
+    CFRunLoopSourceRef src = CFRunLoopSourceCreate(NULL, 0, &ctx);
+    CFRunLoopAddSource(st->runloop, src, kCFRunLoopCommonModes);
+    CFRunLoopRun();
+    CFRelease(src);
+    CFRelease(st->runloop);
+    st->runloop = NULL;
+    return NULL;
+}
+
+mtl_handle_t MTLSharedEventListener_create(void) {
+    shared_event_listener_state *st = calloc(1, sizeof(*st));
+    if (!st) return MTL_NULL_HANDLE;
+    st->listener = [[MTLSharedEventListener alloc] init];
+    st->stopped = 0;
+    /* 启动后台线程跑 CFRunLoop（承载 notifyListener 回调） */
+    pthread_create(&st->thread, NULL, listener_thread_func, st);
+    /* 等线程设好 runloop（notifyListener 需要它就绪） */
+    while (st->runloop == NULL) { usleep(100); }
+    return (mtl_handle_t)(uintptr_t)st;
+}
+
+void MTLSharedEventListener_release(mtl_handle_t listener) {
+    if (listener == MTL_NULL_HANDLE) return;
+    shared_event_listener_state *st = (shared_event_listener_state *)(void *)(uintptr_t)listener;
+    st->stopped = 1;
+    CFRunLoopStop(st->runloop);
+    pthread_join(st->thread, NULL);
+    /* ARC 下用 CFRelease 释放 ObjC 对象（toll-free bridged） */
+    if (st->listener) CFRelease((__bridge CFTypeRef)st->listener);
+    free(st);
+}
+
+void MTLSharedEvent_notifyListener(mtl_handle_t event, mtl_handle_t listener,
+                                    uint64_t value, shared_event_callback_t callback, void *user_data) {
+    if (event == MTL_NULL_HANDLE || listener == MTL_NULL_HANDLE || callback == NULL) return;
+    id<MTLSharedEvent> e = H2ID(event);
+    shared_event_listener_state *st = (shared_event_listener_state *)(void *)(uintptr_t)listener;
+    /* ObjC block 桥接 C 回调：block 捕获 callback + user_data，在 listener 线程触发 */
+    [e notifyListener:st->listener
+              atValue:value
+                block:^(id<MTLSharedEvent> _evt, uint64_t _value) {
+        callback(user_data, _value);
+    }];
 }
 
 /* ============================================================

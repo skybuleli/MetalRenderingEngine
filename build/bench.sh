@@ -32,6 +32,10 @@ echo "--- instanced (1000 draws, batched vs direct) ---"
 echo "Note: demo prints FPS/frame-time/P-Invoke count via ImGui overlay (visible in GUI session)."
 echo "In headless bench, the demo runs but ImGui output is not captured here."
 timeout $((DURATION + 4)) dotnet run --project src/MetalRenderingEngine.Demo -c Release --no-build -- instanced 2>&1 | head -5 || true
+echo ""
+echo "--- fence-bench (MTLFence blocking vs MTLSharedEvent async) ---"
+echo "Outputs per-second: mode/fps/cpuFrame/cpuWait/gpuBusy"
+timeout $((DURATION + 4)) dotnet run --project src/MetalRenderingEngine.Demo -c Release --no-build -- fence-bench 2>&1 | grep "\[fence-bench\]" | head -5 || true
 
 echo ""
 echo "=== Bench complete ==="
