@@ -25,16 +25,20 @@
           StandardOutputImportance="high" />
   </Target>
 
-  <!-- 将 metallib 复制到输出目录 -->
+  <!-- 将 metallib 与 reflect.json 复制到输出目录（Phase 10D: 反射供 ReflectionLoader 运行时加载） -->
   <Target Name="CopyGeneratedMetallibs"
           AfterTargets="CompileGeneratedShaders"
           Condition="Exists('$(ShaderOutputDir)')">
 
     <ItemGroup>
       <_GenMetallib Include="$(ShaderOutputDir)/*.generated.metallib" />
+      <_GenReflection Include="$(ShaderOutputDir)/*.generated.reflect.json" />
     </ItemGroup>
 
     <Copy SourceFiles="@(_GenMetallib)"
+          DestinationFolder="$(OutDir)shaders"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_GenReflection)"
           DestinationFolder="$(OutDir)shaders"
           SkipUnchangedFiles="true" />
   </Target>
