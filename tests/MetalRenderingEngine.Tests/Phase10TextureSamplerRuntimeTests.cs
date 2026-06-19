@@ -10,8 +10,13 @@ namespace MetalRenderingEngine.Tests;
 
 /// <summary>
 /// Phase 10A: texture + sampler 运行时 PoC。
-/// 当前先锁定一个真实 blocker：MSC 产物虽然有 reflect.json 条目，
-/// 但 newArgumentEncoderWithBufferIndex() 暂时拿不到可用 encodedLength。
+///
+/// 已确证结论：MSC 产物虽有 reflect.json 条目，但所有合法 buffer index 上
+/// <c>newArgumentEncoderWithBufferIndex()</c> 都返回 encodedLength==0。
+/// 这不是 blocker，而是 MSC 4.0 的固有行为——其 top-level argument buffer
+/// 是自定义描述符堆 struct（非 Metal 原生 argument buffer），故 MTLArgumentEncoder
+/// 这条路对 MSC 产物是死路。正确做法是手写描述符（见
+/// <c>Phase10ArgEncoderIndexDiagTests</c> 与 <c>docs/argument-buffer-layout.md</c>）。
 /// </summary>
 public class Phase10TextureSamplerRuntimeTests
 {
@@ -55,10 +60,11 @@ float4 frag_main(VSOut input) : SV_Target0
 """;
 
     /// <summary>
-    /// 当前 MSC 产物的 reflect.json 明确存在 texture/sampler 两个顶层条目，
-    /// 但从 metallib 取回的 MTLArgumentEncoder encodedLength 仍为 0。
-    /// 这说明 Phase 10 下一步不是“直接写 encoder helper”，
-    /// 而是先搞清楚 MSC metallib 与 newArgumentEncoderWithBufferIndex 的真实兼容边界。
+    /// 固化已确证结论：MSC 产物的 reflect.json 虽含 texture/sampler 条目，
+    /// 但 <c>newArgumentEncoderWithBufferIndex(0)</c> 返回的 encodedLength 仍为 0。
+    /// MSC 4.0 的 top-level argument buffer 是自定义描述符堆 struct，
+    /// 非 Metal 原生 argument buffer，故 MTLArgumentEncoder 路径不可用。
+    /// texture/sampler 须改走手写描述符路径（见 docs/argument-buffer-layout.md）。
     /// </summary>
     [Fact]
     public void TextureAndSampler_MscMetallib_ArgumentEncoderMetadataIsStillMissing()

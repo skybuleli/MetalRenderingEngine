@@ -248,6 +248,9 @@ internal static partial class MetalBridge
     [LibraryImport(LibraryName, EntryPoint = "MTLTexture_bytesPerRow")]
     public static partial ulong MTLTexture_bytesPerRow(nuint texture, ulong mip_level);
 
+    [LibraryImport(LibraryName, EntryPoint = "MTLTexture_gpuResourceID")]
+    public static partial ulong MTLTexture_gpuResourceID(nuint texture);
+
     [LibraryImport(LibraryName, EntryPoint = "MTLTexture_getBytes")]
     public static unsafe partial ulong MTLTexture_getBytes(nuint texture, void* dst, ulong dst_size, ulong mip_level);
 
@@ -267,6 +270,9 @@ internal static partial class MetalBridge
 
     [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newSamplerState")]
     public static unsafe partial nuint MTLDevice_newSamplerState(nuint device, WMTSamplerInfo* info);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLSamplerState_gpuResourceID")]
+    public static partial ulong MTLSamplerState_gpuResourceID(nuint sampler);
 
     // ============================================================
     //  Phase 3: MTLFence

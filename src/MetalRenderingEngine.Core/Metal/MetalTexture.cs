@@ -16,6 +16,13 @@ public sealed class MetalTexture : MetalObject
     /// <summary>像素格式（<see cref="MTLPixelFormat"/>）。</summary>
     public MTLPixelFormat PixelFormat { get; }
 
+    /// <summary>
+    /// GPU 资源标识（MTLResourceID._impl，macOS 13+）。
+    /// 用于 Phase 10 描述符堆绑定：把 texture 写入 MSC 自定义描述符堆条目。
+    /// texture 需具备 ShaderRead usage 才能取到非零值。
+    /// </summary>
+    public ulong GpuResourceID => MetalBridge.MTLTexture_gpuResourceID(Handle);
+
     internal MetalTexture(nuint handle, uint width, uint height, MTLPixelFormat pixelFormat)
     {
         SetNativeHandle(handle);

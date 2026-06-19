@@ -472,6 +472,10 @@ uint64_t MTLTexture_getBytes(mtl_handle_t texture, void *dst, uint64_t dst_size,
 /* 获取纹理的行字节数（bytesPerRow），用于计算读取缓冲区大小 */
 uint64_t MTLTexture_bytesPerRow(mtl_handle_t texture, uint64_t mip_level);
 
+/* 获取 texture 的 GPU 资源标识（MTLResourceID._impl，macOS 13+）。
+ * 用于将 texture 写入 MSC 描述符堆条目。需要 texture 具备 ShaderRead usage。 */
+uint64_t MTLTexture_gpuResourceID(mtl_handle_t texture);
+
 /* ============================================================
  *  Phase 3 枚举
  * ============================================================ */
@@ -597,6 +601,11 @@ void MTLTexture_replaceRegion(mtl_handle_t texture,
  * ============================================================ */
 
 mtl_handle_t MTLDevice_newSamplerState(mtl_handle_t device, const struct WMTSamplerInfo *info);
+
+/* 获取 sampler 的 GPU 资源标识（MTLResourceID._impl，macOS 13+）。
+ * sampler 必须在创建时设 supportArgumentBuffers=YES（见 MTLDevice_newSamplerState 实现），
+ * 否则返回 0。用于将 sampler 写入 MSC 描述符堆条目。 */
+uint64_t MTLSamplerState_gpuResourceID(mtl_handle_t sampler);
 
 /* ============================================================
  *  Phase 3: MTLFence
