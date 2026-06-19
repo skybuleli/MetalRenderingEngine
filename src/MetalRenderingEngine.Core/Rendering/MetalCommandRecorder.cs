@@ -10,8 +10,10 @@ namespace MetalRenderingEngine.Rendering;
 /// 每个命令方法录入 MetalCommandList（批量缓冲），在 EndRenderPass 时
 /// 单次 P/Invoke 回放全部命令——保住 Phase 6 的 99.5% P/Invoke 优化。
 ///
-/// MetalCommandList 尚未支持的命令（SetVertexBuffer/SetFragmentTexture/WaitForFence 等）
-/// 暂时直接调 encoder，这些是非 draw 命令，每帧调用次数少，不影响批量优化的核心收益。
+/// 当前真实边界见 docs/command-recorder-boundaries.md。
+/// 仍未进入 MetalCommandList 的低频命令暂时直接调 encoder：
+/// SetScissor / SetVertexBuffer / SetFragmentBuffer / SetFragmentTexture。
+/// 这是显式折中，不是架构漂移。
 /// </summary>
 public sealed class MetalCommandRecorder : ICommandRecorder
 {
@@ -122,7 +124,7 @@ public sealed class MetalCommandRecorder : ICommandRecorder
     public void SetScissor(int x, int y, int width, int height)
     {
         EnsureInPass();
-        // MetalCommandList 暂无 RecordSetScissor，直接调 encoder
+        // 低频状态，当前保留直通路径；同步约束记录在 docs/command-recorder-boundaries.md。
         _renderEncoder!.SetScissorRect(x, y, width, height);
         CommandCount++;
     }
@@ -194,7 +196,7 @@ public sealed class MetalCommandRecorder : ICommandRecorder
     {
         ArgumentNullException.ThrowIfNull(buffer);
         EnsureInPass();
-        // MetalCommandList 暂无 RecordSetVertexBuffer，直接调 encoder
+        // 低频状态，当前保留直通路径；同步约束记录在 docs/command-recorder-boundaries.md。
         _renderEncoder!.SetVertexBuffer(buffer, offset, index);
         CommandCount++;
     }
@@ -210,6 +212,7 @@ public sealed class MetalCommandRecorder : ICommandRecorder
     {
         ArgumentNullException.ThrowIfNull(buffer);
         EnsureInPass();
+        // 低频状态，当前保留直通路径；同步约束记录在 docs/command-recorder-boundaries.md。
         _renderEncoder!.SetFragmentBuffer(buffer, offset, index);
         CommandCount++;
     }
@@ -218,6 +221,7 @@ public sealed class MetalCommandRecorder : ICommandRecorder
     {
         ArgumentNullException.ThrowIfNull(texture);
         EnsureInPass();
+        // 低频状态，当前保留直通路径；同步约束记录在 docs/command-recorder-boundaries.md。
         _renderEncoder!.SetFragmentTexture(texture, index);
         CommandCount++;
     }

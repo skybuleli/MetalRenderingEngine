@@ -11,10 +11,10 @@ public sealed class RenderPassBuilder
 {
     private WMTRenderPassDesc _desc = new();
 
-    /// <summary>添加颜色附件（Load=Clear, Store=Store）。</summary>
-    public RenderPassBuilder Color(MetalTexture texture, WMTClearColor clearColor)
+    /// <summary>添加指定索引的颜色附件（Load=Clear, Store=Store）。</summary>
+    public RenderPassBuilder ColorAt(int index, MetalTexture texture, WMTClearColor clearColor)
     {
-        _desc.SetColorAt(0, new WMTRenderPassAttachment
+        _desc.SetColorAt(index, new WMTRenderPassAttachment
         {
             Texture = texture.Handle,
             LoadAction = (int)MTLLoadAction.Clear,
@@ -24,18 +24,32 @@ public sealed class RenderPassBuilder
         return this;
     }
 
-    /// <summary>添加 MSAA 颜色附件（渲染到 msaaTex，resolve 到 resolveTex）。</summary>
-    public RenderPassBuilder MsaaColor(MetalTexture msaaTexture, MetalTexture resolveTexture, WMTClearColor clearColor)
+    /// <summary>添加颜色附件（Load=Clear, Store=Store）。</summary>
+    public RenderPassBuilder Color(MetalTexture texture, WMTClearColor clearColor)
     {
-        _desc.SetColorAt(0, new WMTRenderPassAttachment
+        return ColorAt(0, texture, clearColor);
+    }
+
+    /// <summary>添加指定索引的 MSAA 颜色附件；可选 resolve 目标。</summary>
+    public RenderPassBuilder MsaaColorAt(int index, MetalTexture msaaTexture, MetalTexture? resolveTexture, WMTClearColor clearColor)
+    {
+        _desc.SetColorAt(index, new WMTRenderPassAttachment
         {
             Texture = msaaTexture.Handle,
-            ResolveTexture = resolveTexture.Handle,
+            ResolveTexture = resolveTexture?.Handle ?? 0,
             LoadAction = (int)MTLLoadAction.Clear,
-            StoreAction = (int)MTLStoreAction.MultisampleResolve,
+            StoreAction = resolveTexture is null
+                ? (int)MTLStoreAction.Store
+                : (int)MTLStoreAction.MultisampleResolve,
             ClearColor = clearColor,
         });
         return this;
+    }
+
+    /// <summary>添加 MSAA 颜色附件（渲染到 msaaTex，resolve 到 resolveTex）。</summary>
+    public RenderPassBuilder MsaaColor(MetalTexture msaaTexture, MetalTexture resolveTexture, WMTClearColor clearColor)
+    {
+        return MsaaColorAt(0, msaaTexture, resolveTexture, clearColor);
     }
 
     /// <summary>添加深度附件（Load=Clear, Store=Store）。</summary>

@@ -143,7 +143,8 @@ internal static class BindingClassEmitter
             {
                 sb.AppendLine();
                 sb.AppendLine("        // 标量常量通过 SetBytes 绑定到 b0（由 Slang 输出中的 _constants 隐式 ConstantBuffer 使用）");
-                sb.AppendLine("        // TODO: 自动将所有标量字段打包为 struct 并上传");
+                sb.AppendLine("        // 当前生成器只保证显式资源绑定路径；标量字段布局仍遵循现有隐式常量缓冲约定。");
+                sb.AppendLine("        // 更完整的支持范围见 docs/shadergen-support-matrix.md。");
             }
 
             sb.AppendLine();

@@ -41,7 +41,7 @@
 ```
 MetalRenderingEngine/
 ├── AGENTS.md                         # ← 本文件
-├── BLUEPRINT.md                      # 技术方案蓝图（必读）
+├── BLUEPRINT.md                      # 技术方案蓝图入口（指向实际蓝图文档，必读）
 ├── native/
 │   ├── bridge.h                      # Metal 桥接层 C ABI 头文件
 │   └── bridge.m                      # Metal 桥接层 ObjC 实现
@@ -207,7 +207,7 @@ public MetalLibrary NewLibrary(byte[] data)
 - 所有注释使用 **中文**
 - 公开 API 必须有三斜线 XML 文档注释
 - bridge.m 中每个函数上方注释说明对应的 Metal ObjC 方法
-- 架构决策记录在 BLUEPRINT.md 中，不在代码中重复
+- 架构决策记录在 `BLUEPRINT.md` / `csharp-metal-rendering-blueprint.md` 中，不在代码中重复
 
 ---
 
@@ -327,8 +327,8 @@ dotnet build MetalRenderingEngine.sln
 每次新 Agent 启动时：
 
 1. 读取本 `AGENTS.md`
-2. 读取 `BLUEPRINT.md` 了解技术方案
-3. 检查工具链可用性：`slangc --version`、`metal-shaderconverter --version`、`clang --version`
+2. 读取 `BLUEPRINT.md` 了解技术方案（仓库内入口文件会指向实际蓝图 `csharp-metal-rendering-blueprint.md`）
+3. 检查工具链可用性：`slangc -h`、`metal-shaderconverter --help`、`clang --version`
 4. 确认 `libmetal_bridge.dylib` 是最新的（如需要则重新编译）
 5. 确认着色器 `.metallib` 是最新的（如需要则重新编译）
 6. 运行 `dotnet test` 确认测试通过

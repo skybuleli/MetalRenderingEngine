@@ -171,7 +171,7 @@ rp.SetDepthAttachment(new WMTDepthStencilAttachment { ... });
 
 ### 验证: 3D 场景 Demo (`ThreeDSceneDemo`)
 
-渲染 100 个 instanced 旋转立方体，带深度测试、背面剔除、双 MRT（albedo + normalDepth）。
+渲染 100 个 instanced 旋转立方体，带深度测试、背面剔除、双 MRT（lit color + 轻量 G-buffer）。
 
 ```
 场景参数:
@@ -179,6 +179,7 @@ rp.SetDepthAttachment(new WMTDepthStencilAttachment { ... });
 - 单个 MTLBuffer 存 instance 数据 (model matrix × 100)
 - 摄像机绕 Y 轴旋转
 - 方向光 Blinn-Phong 光照
+- 录制路径走 `MetalCommandRecorder` / `MetalCommandList` 批量回放
 
 渲染目标:
 - MRT0: BGRA8Unorm — 最终颜色 (albedo × lighting)
@@ -187,6 +188,7 @@ rp.SetDepthAttachment(new WMTDepthStencilAttachment { ... });
 断言 (测试):
 - MRT0 每个像素 alpha = 1
 - MRT1 的 z 分量 (深度) 在 [0, 1] 之间
+- MRT1 的 w 分量 roughness 在 [0, 1] 之间
 - 帧时间 < 5ms (100 instanced cubes, M1)
 ```
 

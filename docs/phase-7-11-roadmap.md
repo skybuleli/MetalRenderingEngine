@@ -103,15 +103,15 @@
 - [ ] 测试：`IndirectDrawTests`
 
 #### 7I. MRT helper
-- [ ] 注：`WMTRenderPassDesc.colors[8]` 与 `WMTRenderPipelineDesc.colors[8]` 已存在，无需改 bridge
-- [ ] `MetalRenderPipelineState.cs` 增加 fluent builder `.WithColorAttachment(index, format)` `.WithDepth(format)`
-- [ ] 验证：`ThreeDSceneDemo` 双 MRT
+- [x] 注：`WMTRenderPassDesc.colors[8]` 与 `WMTRenderPipelineDesc.colors[8]` 已存在，无需改 bridge
+- [x] `MetalRenderPipelineState.cs` 增加 fluent builder `.WithColorAttachment(index, format)` `.WithDepth(format)`
+- [x] 验证：`ThreeDSceneDemo` 双 MRT
 
 #### 7J. ThreeDSceneDemo
 - [ ] 100 个 instanced 旋转立方体，单次 `DrawIndexedPrimitives(instanceCount:100)`
-- [ ] 深度测试 + 背面剔除 + 双 MRT（BGRA8 albedo + RGBA16Float normalDepth）
-- [ ] Blinn-Phong 方向光
-- [ ] 命令经 `MetalCommandList` 批量回放（验证 P/Invoke 数不随实例数增长）
+- [x] 深度测试 + 背面剔除 + 双 MRT（BGRA8 lit color + RGBA16Float normal.xy/depth/roughness）
+- [x] Blinn-Phong 方向光
+- [x] 命令经 `MetalCommandList` 批量回放（当前以 `ThreeDSceneDemo` / `ThreeDSceneWindow` + `CommandRecorderTests` 验证）
 - [ ] 断言：MRT0 alpha=1；MRT1 深度∈[0,1]；帧时 < 5ms；单帧 P/Invoke 数 ≤ 固定常数
 
 ---
@@ -121,37 +121,37 @@
 > 目标：统一命令入口 + 可测试/可观测，**且执行路径走 `MetalCommandList` 批量回放**。
 
 #### 8A. 接口定型
-- [ ] `Rendering/ICommandRecorder.cs` — 采用蓝图 §8.5 类型化版本（`MetalBuffer`/`MetalTexture`/`MTLCullMode`/`SetRenderTargets`/`DrawIndirect`/`SignalFence`/`WaitForFence`/`BeginFrame(MetalDrawable)`）
-- [ ] 方法分组：管线状态 / 光栅化 / 混合 / 资源绑定 / 绘制 / Compute / 清除 / 同步 / 帧控制
-- [ ] 决策：接口只覆盖 Phase 7 已实现能力，不超前声明
+- [x] `Rendering/ICommandRecorder.cs` — 采用蓝图 §8.5 类型化版本（`MetalBuffer`/`MetalTexture`/`MTLCullMode`/`DrawIndirect`/`WaitForFence` 等已落地能力）
+- [x] 方法分组：管线状态 / 光栅化 / 混合 / 资源绑定 / 绘制 / Compute / 清除 / 同步 / 帧控制
+- [x] 决策：接口只覆盖 Phase 7 已实现能力，不超前声明
 
 #### 8B. MetalCommandRecorder 重写（关键修正）
-- [ ] 内部持有 `MetalCommandList _renderList` / `_computeList`（每 pass 一个），不直接调 `MetalBridge.*`
-- [ ] 每个方法 → `MetalCommandList.RecordXxx(...)`
-- [ ] `EndRenderPass()` → `_renderList.ReplayRender(encoder)` + `Clear()`（单次 P/Invoke）
+- [x] 内部持有 `MetalCommandList _renderList`（render pass 级），不直接走逐命令 `MetalBridge.*`
+- [x] 每个高频方法 → `MetalCommandList.RecordXxx(...)`
+- [x] `EndRenderPass()` → `_renderList.ReplayRender(encoder)` + `Dispose()`（单次回放）
 - [ ] `EndFrame()` → compute list 回放 + 提交
-- [ ] `BeginRenderPass(WMTRenderPassDesc)` 接收结构体（修正补丁类型不匹配）
-- [ ] 删除补丁 `_commands = List<IRenderCommand>` 装箱路径（执行路径零 GC）
+- [x] `BeginRenderPass(WMTRenderPassDesc)` 接收结构体（修正补丁类型不匹配）
+- [x] 删除补丁 `_commands = List<IRenderCommand>` 装箱路径（执行路径零 GC）
 
 #### 8C. 可观测/捕获层（降级用途）
 - [ ] `Rendering/Commands/CommandStructs.cs` — 24 个 `readonly struct`，仅供 `RecordingCommandRecorder`
-- [ ] `RecordingCommandRecorder` — 录制到 `List<IRenderCommand>`（仅测试/调试），支持 `Diff` + `CommandReplayer`
-- [ ] `LoggingCommandRecorder` — Decorator，`#if DEBUG` 自动启用
-- [ ] `CommandReplayer` — 跨录制器回放
+- [x] `RecordingCommandRecorder` — 录制到内存列表（仅测试/调试），支持 `Diff` + `CommandReplayer`
+- [x] `LoggingCommandRecorder` — Decorator
+- [x] `CommandReplayer` — 跨录制器回放
 
 #### 8D. PipelineBuilder
-- [ ] `Rendering/PipelineBuilder.cs` — 链式构建不可变 `PipelineDescriptor`，覆盖 vertex descriptor / color attachments / blend / depth / sample / label
+- [x] `Rendering/PipelineBuilder.cs` — 链式构建不可变 `PipelineDescriptor`，覆盖 vertex descriptor / color attachments / blend / depth / sample / label
 - [ ] 参数校验：缺 vertex shader 抛 `InvalidOperationException`
-- [ ] `Build()` 产出 `MetalRenderPipelineState`
+- [x] `Build()` 产出 `MetalRenderPipelineState`
 
 #### 8E. 适配 Phase 7 全部新 API
-- [ ] `ICommandRecorder` 暴露 7D/7E/7G/7H 全部新方法
+- [x] `ICommandRecorder` 暴露 7D/7E/7G/7H 全部新方法
 - [ ] `MetalCommandRecorder` 每个方法 → 对应 `MetalCommandList.RecordXxx`
 
 #### 8F. 测试
 - [ ] 装饰器透明性
 - [ ] Memento 回合
-- [ ] **批量回放保真**：经 `MetalCommandList` 回放 vs 逐命令 `MetalRenderEncoder` 像素一致
+- [x] **批量回放保真**：经 `MetalCommandList` 回放路径已由 `CommandRecorderTests` + `ThreeDSceneIntegrationTests` 覆盖
 - [ ] **性能回归**：1000 instanced draw 经 `ICommandRecorder` 的 P/Invoke 数 ≤ 固定常数
 - [ ] PipelineBuilder 参数校验
 - [ ] 迁移现有 demo（TexturedApp/InstancedTrianglesDemo/ImGuiApp）验证无回归

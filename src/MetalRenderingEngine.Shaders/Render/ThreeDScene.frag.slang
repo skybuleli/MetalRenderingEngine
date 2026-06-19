@@ -1,6 +1,6 @@
-// ThreeDScene.frag.slang — Phase 7J: Blinn-Phong 光照（单 color attachment）
-// PerFrame 用 StructuredBuffer（与 vertex 一致，复用已验证的 SRV 绑定路径）。
-// MRT 输出推迟到 Phase 10A PoC 验证后（MSC 多 target 输出未验证）。
+// ThreeDScene.frag.slang — Phase 7J/10A: Blinn-Phong 光照 + MRT 双输出
+// MRT0: 最终 lit color
+// MRT1: 轻量 G-buffer（normal.xy 编码 + depth01 + roughness）
 
 struct PerFrame {
     float4x4 viewProj;
@@ -14,8 +14,13 @@ struct PSInput {
     float3 normal   : TEXCOORD1;
 };
 
+struct PSOutput {
+    float4 color   : SV_Target0;
+    float4 gbuffer : SV_Target1;
+};
+
 [shader("fragment")]
-float4 main(PSInput input, StructuredBuffer<PerFrame> perFrame) : SV_Target
+PSOutput main(PSInput input, StructuredBuffer<PerFrame> perFrame)
 {
     float3 N = normalize(input.normal);
     float3 L = normalize(perFrame[0].lightDir.xyz);
@@ -28,7 +33,13 @@ float4 main(PSInput input, StructuredBuffer<PerFrame> perFrame) : SV_Target
     float ambient = 0.2;
 
     float3 baseColor = float3(0.8, 0.8, 0.85);
+    float roughness = 0.35;
     float3 lit = baseColor * (ambient + diff) + float3(1.0, 1.0, 1.0) * spec * 0.5;
+    float depth01 = saturate(length(perFrame[0].camPos.xyz - input.worldPos) / 50.0);
+    float2 encodedNormalXY = N.xy * 0.5 + 0.5;
 
-    return float4(lit, 1.0);
+    PSOutput out;
+    out.color = float4(lit, 1.0);
+    out.gbuffer = float4(encodedNormalXY, depth01, roughness);
+    return out;
 }

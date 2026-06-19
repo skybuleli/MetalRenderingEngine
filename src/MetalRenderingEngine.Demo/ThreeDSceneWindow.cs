@@ -9,7 +9,7 @@ using SysVector4 = System.Numerics.Vector4;
 namespace MetalRenderingEngine.Demo;
 
 /// <summary>
-/// Phase 7J/8: 100 个 instanced 旋转立方体，4x MSAA，Blinn-Phong 光照。
+/// Phase 7J/8/10A: 100 个 instanced 旋转立方体，4x MSAA，MRT，深度测试，Blinn-Phong 光照，轻量 G-buffer。
 /// 运行：dotnet run --project src/MetalRenderingEngine.Demo -- threed-win
 /// </summary>
 internal static class ThreeDSceneWindow
@@ -42,12 +42,33 @@ internal static class ThreeDSceneWindow
         using var vertFn = MetalShaderLoader.GetFunction(device, "ThreeDScene.vert", "main");
         using var fragFn = MetalShaderLoader.GetFunction(device, "ThreeDScene.frag", "main");
         using var pso = new PipelineBuilder()
-            .WithColorAttachment(0, MTLPixelFormat.BGRA8Unorm).WithSampleCount(SampleCount)
+            .WithColorAttachment(0, MTLPixelFormat.BGRA8Unorm)
+            .WithColorAttachment(1, MTLPixelFormat.RGBA16Float)
+            .WithDepth(MTLPixelFormat.Depth32Float)
+            .WithSampleCount(SampleCount)
             .Build(device, vertFn, fragFn);
+        var dsDesc = new WMTDepthStencilDesc
+        {
+            DepthCompareFunction = (int)MTLCompareFunction.Less,
+            DepthWriteEnabled = 1,
+        };
+        using var depthState = device.NewDepthStencilState(dsDesc);
 
         MetalTexture? msaaTex = SampleCount > 1
             ? device.NewTexture(WMTTextureInfo.Create2DMultisample(MTLPixelFormat.BGRA8Unorm, W, H, SampleCount))
             : null;
+        MetalTexture? gbufferTex = SampleCount > 1
+            ? device.NewTexture(WMTTextureInfo.Create2DMultisample(MTLPixelFormat.RGBA16Float, W, H, SampleCount))
+            : device.NewTexture(WMTTextureInfo.Create2D(
+                MTLPixelFormat.RGBA16Float, W, H,
+                MTLTextureUsage.RenderTarget | MTLTextureUsage.ShaderRead,
+                MTLResourceOptions.StorageModePrivate));
+        MetalTexture? depthTex = SampleCount > 1
+            ? device.NewTexture(WMTTextureInfo.Create2DMultisample(MTLPixelFormat.Depth32Float, W, H, SampleCount))
+            : device.NewTexture(WMTTextureInfo.Create2D(
+                MTLPixelFormat.Depth32Float, W, H,
+                MTLTextureUsage.RenderTarget,
+                MTLResourceOptions.StorageModePrivate));
         using var instanceBuf = device.NewBuffer((ulong)(InstanceCount * Marshal.SizeOf<Instance>()), MTLResourceOptions.StorageModeShared);
         using var perFrameBuf = device.NewBuffer((ulong)Marshal.SizeOf<PerFrame>(), MTLResourceOptions.StorageModeShared);
 
@@ -89,13 +110,25 @@ internal static class ThreeDSceneWindow
                 };
                 var fragArg = perFrameBuf.ToUavDescriptor((ulong)Marshal.SizeOf<PerFrame>());
 
-                var passDesc = msaaTex is not null
-                    ? new RenderPassBuilder().MsaaColor(msaaTex, drawable.Texture, new(0.1f, 0.12f, 0.15f, 1f)).Build()
-                    : new RenderPassBuilder().Color(drawable.Texture, new(0.1f, 0.12f, 0.15f, 1f)).Build();
+                var passBuilder = new RenderPassBuilder();
+                if (msaaTex is not null)
+                {
+                    passBuilder
+                        .MsaaColorAt(0, msaaTex, drawable.Texture, new(0.1f, 0.12f, 0.15f, 1f))
+                        .MsaaColorAt(1, gbufferTex!, null, new(0f, 0f, 0f, 0f));
+                }
+                else
+                {
+                    passBuilder
+                        .ColorAt(0, drawable.Texture, new(0.1f, 0.12f, 0.15f, 1f))
+                        .ColorAt(1, gbufferTex!, new(0f, 0f, 0f, 0f));
+                }
+                var passDesc = passBuilder.Depth(depthTex!, clearDepth: 1f).Build();
 
                 recorder.BeginFrame();
                 recorder.BeginRenderPass(passDesc);
                 recorder.SetPipelineState(pso);
+                recorder.SetDepthStencilState(depthState);
                 recorder.SetViewport(0, 0, W, H, 0, 1);
                 recorder.SetCullMode(MTLCullMode.Back);
                 recorder.SetFrontFacing(MTLWinding.CounterClockwise);

@@ -44,6 +44,17 @@ static uint64_t copy_nsstring_utf8(NSString *str, char *buffer, uint64_t max_len
     return (uint64_t)need;
 }
 
+/* 仅当调用方显式配置了 stencil 字段时，才创建 MTLStencilDescriptor。
+ * 否则保持 nil，避免把“未配置 stencil”误解释成 CompareFunction=Never。 */
+static BOOL has_stencil_descriptor(const struct WMTStencilDescriptor *desc) {
+    return desc->stencilFailureOperation != 0 ||
+           desc->depthFailureOperation != 0 ||
+           desc->depthStencilPassOperation != 0 ||
+           desc->stencilCompareFunction != 0 ||
+           desc->readMask != 0 ||
+           desc->writeMask != 0;
+}
+
 /* ============================================================
  *  引用计数
  * ============================================================ */
@@ -316,27 +327,35 @@ mtl_handle_t MTLDevice_newDepthStencilState(mtl_handle_t device,
     dsd.depthCompareFunction = (MTLCompareFunction)desc->depthCompareFunction;
     dsd.depthWriteEnabled = desc->depthWriteEnabled ? YES : NO;
 
-    dsd.frontFaceStencil.stencilFailureOperation =
-        (MTLStencilOperation)desc->frontFaceStencil.stencilFailureOperation;
-    dsd.frontFaceStencil.depthFailureOperation =
-        (MTLStencilOperation)desc->frontFaceStencil.depthFailureOperation;
-    dsd.frontFaceStencil.depthStencilPassOperation =
-        (MTLStencilOperation)desc->frontFaceStencil.depthStencilPassOperation;
-    dsd.frontFaceStencil.stencilCompareFunction =
-        (MTLCompareFunction)desc->frontFaceStencil.stencilCompareFunction;
-    dsd.frontFaceStencil.readMask = desc->frontFaceStencil.readMask;
-    dsd.frontFaceStencil.writeMask = desc->frontFaceStencil.writeMask;
+    if (has_stencil_descriptor(&desc->frontFaceStencil)) {
+        MTLStencilDescriptor *front = [[MTLStencilDescriptor alloc] init];
+        front.stencilFailureOperation =
+            (MTLStencilOperation)desc->frontFaceStencil.stencilFailureOperation;
+        front.depthFailureOperation =
+            (MTLStencilOperation)desc->frontFaceStencil.depthFailureOperation;
+        front.depthStencilPassOperation =
+            (MTLStencilOperation)desc->frontFaceStencil.depthStencilPassOperation;
+        front.stencilCompareFunction =
+            (MTLCompareFunction)desc->frontFaceStencil.stencilCompareFunction;
+        front.readMask = desc->frontFaceStencil.readMask;
+        front.writeMask = desc->frontFaceStencil.writeMask;
+        dsd.frontFaceStencil = front;
+    }
 
-    dsd.backFaceStencil.stencilFailureOperation =
-        (MTLStencilOperation)desc->backFaceStencil.stencilFailureOperation;
-    dsd.backFaceStencil.depthFailureOperation =
-        (MTLStencilOperation)desc->backFaceStencil.depthFailureOperation;
-    dsd.backFaceStencil.depthStencilPassOperation =
-        (MTLStencilOperation)desc->backFaceStencil.depthStencilPassOperation;
-    dsd.backFaceStencil.stencilCompareFunction =
-        (MTLCompareFunction)desc->backFaceStencil.stencilCompareFunction;
-    dsd.backFaceStencil.readMask = desc->backFaceStencil.readMask;
-    dsd.backFaceStencil.writeMask = desc->backFaceStencil.writeMask;
+    if (has_stencil_descriptor(&desc->backFaceStencil)) {
+        MTLStencilDescriptor *back = [[MTLStencilDescriptor alloc] init];
+        back.stencilFailureOperation =
+            (MTLStencilOperation)desc->backFaceStencil.stencilFailureOperation;
+        back.depthFailureOperation =
+            (MTLStencilOperation)desc->backFaceStencil.depthFailureOperation;
+        back.depthStencilPassOperation =
+            (MTLStencilOperation)desc->backFaceStencil.depthStencilPassOperation;
+        back.stencilCompareFunction =
+            (MTLCompareFunction)desc->backFaceStencil.stencilCompareFunction;
+        back.readMask = desc->backFaceStencil.readMask;
+        back.writeMask = desc->backFaceStencil.writeMask;
+        dsd.backFaceStencil = back;
+    }
 
     id<MTLDepthStencilState> state = [dev newDepthStencilStateWithDescriptor:dsd];
     return state ? ID2H(state) : MTL_NULL_HANDLE;
@@ -700,6 +719,7 @@ static NSUInteger pixel_format_bytes_per_pixel(MTLPixelFormat pf) {
     case MTLPixelFormatR8Unorm:        return 1;
     case MTLPixelFormatRGBA8Unorm:
     case MTLPixelFormatBGRA8Unorm:     return 4;
+    case MTLPixelFormatRGBA16Float:    return 8;
     case MTLPixelFormatRGBA32Float:    return 16;
     case MTLPixelFormatDepth32Float:   return 4;
     case MTLPixelFormatDepth32Float_Stencil8: return 5;  /* packed: 32-bit depth + 8-bit stencil (按 8 字节对齐) */

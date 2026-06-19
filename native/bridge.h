@@ -260,6 +260,7 @@ enum WMTPixelFormat {
     WMTPixelFormatR8Unorm      = 10,     /* Phase 3.5: ImGui font atlas */
     WMTPixelFormatRGBA8Unorm   = 70,
     WMTPixelFormatBGRA8Unorm   = 80,
+    WMTPixelFormatRGBA16Float  = 115,
     WMTPixelFormatRGBA32Float  = 125,
     WMTPixelFormatDepth32Float = 252,
     WMTPixelFormatDepth32Float_Stencil8 = 260,  /* Phase 7C: packed depth+stencil (Apple Silicon 原生) */

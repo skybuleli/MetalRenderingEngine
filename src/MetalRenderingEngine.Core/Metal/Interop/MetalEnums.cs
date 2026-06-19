@@ -48,6 +48,7 @@ public enum MTLPixelFormat : int
     R8Unorm      = 10,   /* Phase 3.5: ImGui font atlas */
     RGBA8Unorm   = 70,
     BGRA8Unorm   = 80,
+    RGBA16Float  = 115,
     RGBA32Float  = 125,
     Depth32Float = 252,
     Depth32Float_Stencil8 = 260,  /* Phase 7C: packed depth+stencil (Apple Silicon 原生) */
