@@ -17,8 +17,8 @@ namespace MetalRenderingEngine.Demo;
 ///
 /// <para>展示引擎全栈能力：</para>
 /// <list type="bullet">
-/// <item><b>SlangCompiler</b>：运行时编译 compute 着色器 (Slang → DXIL → metallib)</item>
-/// <item><b>MSL 运行时编译</b>：渲染着色器使用 MSL 直接绑定 (newLibraryWithSource)</item>
+/// <item><b>SlangCompiler</b>：运行时编译 compute + vertex + fragment 着色器 (Slang → DXIL → metallib)</item>
+/// <item><b>MSC Argument Buffer</b>：compute 和 render 均使用 argument buffer（UseResource 声明驻留）</item>
 /// <item><b>ShaderCache</b>：两级缓存（L1 内存 + L2 磁盘），后续帧零编译开销</item>
 /// <item><b>Compute</b>：GPU 粒子物理模拟（重力 + 风力 + 生命周期）</item>
 /// <item><b>Instanced draw</b>：万级粒子一次 draw call</item>
@@ -71,8 +71,16 @@ internal static class GpuParticleDemo
         public ulong Stride;
     }
 
+    // 顶点 argument buffer：2 × UavDescriptor = 48 字节
+    [StructLayout(LayoutKind.Sequential)]
+    private struct VertArgBuffer
+    {
+        public UavDescriptor Srv0;  // particles
+        public UavDescriptor Srv1;  // perFrame
+    }
+
     // ============================================================
-    //  Compute 着色器（Slang → MSC，argument buffer 在 compute 中工作正常）
+    //  Compute 着色器（Slang → MSC，argument buffer）
     // ============================================================
 
     private const string ComputeShaderSource = @"
@@ -144,13 +152,10 @@ void main(uint3 tid : SV_DispatchThreadID) {
 ";
 
     // ============================================================
-    //  渲染着色器（MSL 直接绑定 — 绕过 MSC argument buffer 兼容性问题）
+    //  渲染着色器（Slang → MSC，argument buffer + UseResource）
     // ============================================================
 
-    private const string RenderVertMSL = @"
-#include <metal_stdlib>
-using namespace metal;
-
+    private const string RenderShaderSource = @"
 struct Particle {
     float2 position;
     float2 velocity;
@@ -160,7 +165,6 @@ struct Particle {
     float size;
     float pad;
 };
-
 struct PerFrame {
     float2 viewport;
     float time;
@@ -170,27 +174,26 @@ struct PerFrame {
     float emitterX;
     float emitterY;
     int activeCount;
-    float p1, p2, p3;
+    float pad1, pad2, pad3;
 };
 
 struct VSOut {
-    float4 position [[position]];
-    float4 color;
-    float2 uv;
+    float4 position : SV_Position;
+    float4 color    : TEXCOORD0;
+    float2 uv       : TEXCOORD1;
 };
 
-vertex VSOut particle_vs(
-    uint vid [[vertex_id]],
-    uint iid [[instance_id]],
-    const device Particle* particles [[buffer(0)]],
-    const device PerFrame* pf [[buffer(1)]])
+static const float2 offsets[6] = {
+    float2(-1,-1), float2(-1,1), float2(1,-1),
+    float2(1,-1),  float2(-1,1), float2(1,1)
+};
+
+[shader(""vertex"")]
+VSOut main(uint vid : SV_VertexID, uint iid : SV_InstanceID,
+           StructuredBuffer<Particle> particles,
+           StructuredBuffer<PerFrame> pf)
 {
     Particle p = particles[iid];
-
-    float2 offsets[6] = {
-        float2(-1,-1), float2(-1,1), float2(1,-1),
-        float2(1,-1), float2(-1,1), float2(1,1)
-    };
     float2 off = offsets[vid];
 
     float2 vp = pf[0].viewport;
@@ -206,23 +209,14 @@ vertex VSOut particle_vs(
     o.uv = off;
     return o;
 }
-";
 
-    private const string RenderFragMSL = @"
-#include <metal_stdlib>
-using namespace metal;
-
-struct VSOut {
-    float4 position [[position]];
-    float4 color;
-    float2 uv;
-};
-
-fragment float4 particle_fs(VSOut in [[stage_in]]) {
-    float dist = length(in.uv);
-    if (dist > 1.0) discard_fragment;
-    float alpha = in.color.a * (1.0 - dist * dist);
-    return float4(in.color.rgb * alpha, alpha);
+[shader(""fragment"")]
+float4 frag_main(VSOut input) : SV_Target0
+{
+    float dist = length(input.uv);
+    if (dist > 1.0) discard;
+    float alpha = input.color.a * (1.0 - dist * dist);
+    return float4(input.color.rgb * alpha, alpha);
 }
 ";
 
@@ -265,21 +259,33 @@ fragment float4 particle_fs(VSOut in [[stage_in]]) {
         t1.Stop();
         Console.WriteLine($"  Cache hit: {t1.ElapsedMilliseconds}ms (hit={cached.CacheHit})");
 
-        // ② 运行时编译渲染着色器（MSL → newLibraryWithSource）
-        Console.WriteLine("▸ Compiling render shaders via MSL (newLibraryWithSource)...");
+        // ② 运行时编译渲染着色器（Slang → DXIL → MSC → metallib）
+        Console.WriteLine("▸ Compiling render shaders via SlangCompiler (vertex + fragment)...");
         var t2 = Stopwatch.StartNew();
-        using var vertLib = device.NewLibraryWithSource(RenderVertMSL);
-        using var fragLib = device.NewLibraryWithSource(RenderFragMSL);
+        var renderVertOpts = new ShaderCompileOptions { Stage = ShaderStage.Vertex, GenerateReflection = true };
+        var renderFragOpts = new ShaderCompileOptions { Stage = ShaderStage.Fragment, EntryPoint = "frag_main" };
+        var vertResult = compiler.CompileFromSource(
+            System.Text.Encoding.UTF8.GetBytes(RenderShaderSource), "ParticleRender.slang", renderVertOpts);
+        var fragResult = compiler.CompileFromSource(
+            System.Text.Encoding.UTF8.GetBytes(RenderShaderSource), "ParticleRender.slang", renderFragOpts);
         t2.Stop();
-        Console.WriteLine($"  MSL compile: {t2.ElapsedMilliseconds}ms");
+        Console.WriteLine($"  Render compile: {t2.ElapsedMilliseconds}ms (vert hit={vertResult.CacheHit}, frag hit={fragResult.CacheHit})");
+
+        if (vertResult.ReflectionJson != null)
+        {
+            var reflect = Shader.Reflection.MscReflectionParser.Parse(vertResult.ReflectionJson);
+            Console.WriteLine($"  Vertex reflection: {reflect.ResourceCount} resources");
+            foreach (var e in reflect.TopLevelArgumentBuffer)
+                Console.WriteLine($"    [{e.Type}] Slot={e.Slot} Offset={e.EltOffset} Size={e.Size}");
+        }
 
         // ③ 创建 PSO
         using var computeFn = device.NewLibrary(computeResult.MetallibData!).NewFunction("main");
         using var computePso = device.NewComputePipelineState(computeFn);
         Console.WriteLine($"  Compute PSO: maxThreads={computePso.MaxTotalThreadsPerThreadgroup}");
 
-        using var vertFn = vertLib.NewFunction("particle_vs");
-        using var fragFn = fragLib.NewFunction("particle_fs");
+        using var vertFn = device.NewLibrary(vertResult.MetallibData!).NewFunction("main");
+        using var fragFn = device.NewLibrary(fragResult.MetallibData!).NewFunction("frag_main");
 
         var pipeDesc = new WMTRenderPipelineDesc { ColorCount = 1, SampleCount = 1 };
         pipeDesc.ColorAttachmentAt(0) = new WMTColorAttachment
@@ -442,13 +448,24 @@ fragment float4 particle_fs(VSOut in [[stage_in]]) {
                     computeEnc.EndEncoding();
                 }
 
-                // ---- Render pass: 绘制粒子 (MSL 直接 buffer 绑定) ----
+                // ---- Render pass: 绘制粒子 (Slang/MSC argument buffer + UseResource) ----
                 var scenePassDesc = BuildRenderPassDesc(drawable.Texture.Handle, clear: true);
                 var renderEnc = cmdbuf.RenderCommandEncoder(scenePassDesc);
                 renderEnc.SetRenderPipelineState(renderPso);
                 renderEnc.SetViewport(0, 0, displayW, displayH, 0, 1);
-                renderEnc.SetVertexBuffer(particleBuffer, 0, 0);   // buffer(0) = particles
-                renderEnc.SetVertexBuffer(perFrameBuffer, 0, 1);   // buffer(1) = perFrame
+
+                // 声明资源驻留（MSC argument buffer 依赖 UseResource 让 GPU 能解析内嵌 GPU 地址）
+                renderEnc.UseResource(particleBuffer, MTLResourceUsage.Read, MTLRenderStages.Vertex);
+                renderEnc.UseResource(perFrameBuffer, MTLResourceUsage.Read, MTLRenderStages.Vertex);
+
+                // argument buffer: particles @ slot 0, perFrame @ slot 1
+                var renderArgBuf = new VertArgBuffer
+                {
+                    Srv0 = new UavDescriptor { GpuAddress = particleBuffer.GpuAddress, Length = particleBuffer.Length, Stride = (ulong)particleSize },
+                    Srv1 = new UavDescriptor { GpuAddress = perFrameBuffer.GpuAddress, Length = perFrameBuffer.Length, Stride = (ulong)perFrameSize },
+                };
+                renderEnc.SetVertexBytes(in renderArgBuf, ArgIndex);
+
                 renderEnc.DrawPrimitives(0, 0, 6, (ulong)activeCount);
                 renderEnc.EndEncoding();
                 renderEnc.Dispose();
