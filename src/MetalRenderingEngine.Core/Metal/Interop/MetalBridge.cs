@@ -333,6 +333,24 @@ internal static partial class MetalBridge
     public static partial void MTLRenderCommandEncoder_setStencilReferenceValue(nuint encoder, uint front, uint back);
 
     // ============================================================
+    //  Phase 3.5: MTLArgumentEncoder
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLFunction_newArgumentEncoder")]
+    public static partial nuint MTLFunction_newArgumentEncoder(nuint function, ulong buffer_index);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLArgumentEncoder_encodedLength")]
+    public static partial ulong MTLArgumentEncoder_encodedLength(nuint encoder);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLArgumentEncoder_encodeTextureSampler")]
+    public static partial void MTLArgumentEncoder_encodeTextureSampler(
+        nuint encoder,
+        nuint arg_buffer,
+        ulong offset,
+        nuint texture,
+        nuint sampler);
+
+    // ============================================================
     //  Phase 3.5: MTLRenderPassDescriptor (for Hexa.NET.ImGui Backends)
     // ============================================================
 

@@ -23,4 +23,33 @@ public sealed class MetalLibrary : MetalObject
 public sealed class MetalFunction : MetalObject
 {
     internal MetalFunction(nuint handle) { SetNativeHandle(handle); }
+
+    /// <summary>为指定 buffer index 创建 MTLArgumentEncoder。</summary>
+    public MetalArgumentEncoder NewArgumentEncoder(ulong bufferIndex)
+    {
+        nuint h = MetalBridge.MTLFunction_newArgumentEncoder(Handle, bufferIndex);
+        if (h == 0) throw new MetalException($"MTLFunction newArgumentEncoderWithBufferIndex({bufferIndex}) returned nil.");
+        return new MetalArgumentEncoder(h);
+    }
+}
+
+/// <summary>
+/// MTLArgumentEncoder 封装。
+/// 当前只暴露 Phase 10A 需要的最小能力：把 texture + sampler 编到 argument buffer。
+/// </summary>
+public sealed class MetalArgumentEncoder : MetalObject
+{
+    internal MetalArgumentEncoder(nuint handle) { SetNativeHandle(handle); }
+
+    /// <summary>编码所需 argument buffer 总字节数。</summary>
+    public ulong EncodedLength => MetalBridge.MTLArgumentEncoder_encodedLength(Handle);
+
+    /// <summary>把 texture + sampler 编码到 argument buffer 指定偏移。</summary>
+    public void EncodeTextureSampler(MetalBuffer argumentBuffer, ulong offset, MetalTexture texture, MetalSamplerState sampler)
+    {
+        ArgumentNullException.ThrowIfNull(argumentBuffer);
+        ArgumentNullException.ThrowIfNull(texture);
+        ArgumentNullException.ThrowIfNull(sampler);
+        MetalBridge.MTLArgumentEncoder_encodeTextureSampler(Handle, argumentBuffer.Handle, offset, texture.Handle, sampler.Handle);
+    }
 }
