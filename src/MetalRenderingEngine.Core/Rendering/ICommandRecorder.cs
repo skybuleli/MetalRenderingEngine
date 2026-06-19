@@ -76,11 +76,17 @@ public interface ICommandRecorder : IDisposable
     /// <summary>设置 vertex bytes（内联数据，泛型版本）。</summary>
     void SetVertexBytes<T>(in T value, ulong index) where T : unmanaged;
 
+    /// <summary>设置 vertex bytes（动态长度版本，支持运行时构造的 argument buffer）。</summary>
+    void SetVertexBytes(ReadOnlySpan<byte> data, ulong index);
+
     /// <summary>设置 vertex buffer。</summary>
     void SetVertexBuffer(MetalBuffer buffer, ulong offset, ulong index);
 
     /// <summary>设置 fragment bytes（内联数据，泛型版本）。</summary>
     void SetFragmentBytes<T>(in T value, ulong index) where T : unmanaged;
+
+    /// <summary>设置 fragment bytes（动态长度版本，支持运行时构造的 argument buffer）。</summary>
+    void SetFragmentBytes(ReadOnlySpan<byte> data, ulong index);
 
     /// <summary>设置 fragment buffer。</summary>
     void SetFragmentBuffer(MetalBuffer buffer, ulong offset, ulong index);

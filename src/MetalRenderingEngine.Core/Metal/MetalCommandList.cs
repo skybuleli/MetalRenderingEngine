@@ -171,6 +171,34 @@ public sealed unsafe class MetalCommandList : IDisposable
         LinkCommand(&p->Base);
     }
 
+    /// <summary>录制：SetVertexBytes（动态长度 payload，拷贝到 ring buffer）。</summary>
+    public unsafe void RecordSetVertexBytes(ReadOnlySpan<byte> data, ulong index)
+    {
+        var p = (WMTRenderSetBytes*)Alloc(sizeof(WMTRenderSetBytes));
+        byte* payload = Alloc(data.Length);
+        fixed (byte* src = data)
+            Buffer.MemoryCopy(src, payload, data.Length, data.Length);
+        p->Base.Type = (ushort)WMTRenderCmdType.SetVertexBytes;
+        p->Bytes = payload;
+        p->Length = (ulong)data.Length;
+        p->Index = index;
+        LinkCommand(&p->Base);
+    }
+
+    /// <summary>录制：SetFragmentBytes（动态长度 payload，拷贝到 ring buffer）。</summary>
+    public unsafe void RecordSetFragmentBytes(ReadOnlySpan<byte> data, ulong index)
+    {
+        var p = (WMTRenderSetBytes*)Alloc(sizeof(WMTRenderSetBytes));
+        byte* payload = Alloc(data.Length);
+        fixed (byte* src = data)
+            Buffer.MemoryCopy(src, payload, data.Length, data.Length);
+        p->Base.Type = (ushort)WMTRenderCmdType.SetFragmentBytes;
+        p->Bytes = payload;
+        p->Length = (ulong)data.Length;
+        p->Index = index;
+        LinkCommand(&p->Base);
+    }
+
     /// <summary>录制：UseResource（render，带 stages）。</summary>
     public unsafe void RecordUseResource(MetalObject resource, MTLResourceUsage usage, MTLRenderStages stages)
     {

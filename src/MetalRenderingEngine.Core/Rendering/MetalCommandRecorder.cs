@@ -192,6 +192,13 @@ public sealed class MetalCommandRecorder : ICommandRecorder
         CommandCount++;
     }
 
+    public void SetVertexBytes(ReadOnlySpan<byte> data, ulong index)
+    {
+        EnsureInPass();
+        _renderList!.RecordSetVertexBytes(data, index);
+        CommandCount++;
+    }
+
     public void SetVertexBuffer(MetalBuffer buffer, ulong offset, ulong index)
     {
         ArgumentNullException.ThrowIfNull(buffer);
@@ -205,6 +212,13 @@ public sealed class MetalCommandRecorder : ICommandRecorder
     {
         EnsureInPass();
         _renderList!.RecordSetFragmentBytes(in value, index);
+        CommandCount++;
+    }
+
+    public void SetFragmentBytes(ReadOnlySpan<byte> data, ulong index)
+    {
+        EnsureInPass();
+        _renderList!.RecordSetFragmentBytes(data, index);
         CommandCount++;
     }
 

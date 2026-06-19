@@ -140,8 +140,10 @@ public sealed class RecordingCommandRecorder : ICommandRecorder
     public void SetStencilReference(uint front, uint back) { /* 不捕获 */ }
 
     public void SetVertexBytes<T>(in T value, ulong index) where T : unmanaged { /* 不捕获 */ }
+    public void SetVertexBytes(ReadOnlySpan<byte> data, ulong index) { /* 不捕获 */ }
     public void SetVertexBuffer(MetalBuffer buffer, ulong offset, ulong index) { /* 不捕获 */ }
     public void SetFragmentBytes<T>(in T value, ulong index) where T : unmanaged { /* 不捕获 */ }
+    public void SetFragmentBytes(ReadOnlySpan<byte> data, ulong index) { /* 不捕获 */ }
     public void SetFragmentBuffer(MetalBuffer buffer, ulong offset, ulong index) { /* 不捕获 */ }
     public void SetFragmentTexture(MetalTexture texture, ulong index) { /* 不捕获 */ }
     public void UseResource(MetalObject resource, MTLResourceUsage usage, MTLRenderStages stages) => Capture(new UseResourceCommand(resource.Handle, usage, stages));
