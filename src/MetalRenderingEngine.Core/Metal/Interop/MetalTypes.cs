@@ -390,8 +390,28 @@ public struct WMTDepthStencilDesc
 // ============================================================
 
 /// <summary>
-/// MSC 4.0 的 argument buffer 中 UAV/SRV/CBV 描述符（24 字节）。
-/// 字段顺序与 reflection JSON 的 TopLevelArgumentBuffer 描述对齐。
+/// MSC 4.0 描述符堆条目（24 字节 = 3×uint64）。
+/// 字段布局与 MSC 官方 runtime 头文件 <c>metal_irconverter_runtime.h</c> 的
+/// <c>IRDescriptorTableEntry{gpuVA, textureViewID, metadata}</c> 完全一致。
+/// buffer / texture / sampler 三种资源共用此结构，各字段语义见
+/// <c>IRDescriptorTableSetBuffer/SetTexture/SetSampler</c>。
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct IRDescriptorTableEntry
+{
+    /// <summary>+0：buffer 的 GPU 地址；texture 固定 0；sampler 的 gpuResourceID。</summary>
+    public ulong GpuVA;
+
+    /// <summary>+8：texture 的 gpuResourceID；buffer/typed-buffer view 的 textureViewID；sampler 固定 0。</summary>
+    public ulong TextureViewID;
+
+    /// <summary>+16：buffer 的元数据；texture 的 (minLODClamp 位模式) | (metadata&lt;&lt;32)；sampler 的 lodBias 位模式。</summary>
+    public ulong Metadata;
+}
+
+/// <summary>
+/// 兼容别名：MSC 4.0 的 argument buffer 中 UAV/SRV buffer 描述符（24 字节）。
+/// 字段顺序与 <see cref="IRDescriptorTableEntry"/> 对齐：{GpuAddress=gpuVA, Length, Stride}。
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct UavDescriptor
@@ -399,4 +419,45 @@ public struct UavDescriptor
     public ulong GpuAddress;
     public ulong Length;
     public ulong Stride;
+}
+
+/// <summary>
+/// MSC 4.0 的 argument buffer 中 texture 描述符（24 字节）。
+/// 字段布局即 <see cref="IRDescriptorTableEntry"/>；语义由
+/// <c>IRDescriptorTableSetTexture</c> 定义：
+/// +0(gpuVA)=0，+8(textureViewID)=texture.gpuResourceID，
+/// +16(metadata)=(minLODClamp 的 float 位模式) | ((uint64)metadata &lt;&lt; 32)。
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct TextureDescriptor
+{
+    /// <summary>+0 gpuVA：texture 固定为 0。</summary>
+    public ulong GpuVA;
+
+    /// <summary>+8 textureViewID：texture.gpuResourceID（MTLResourceID._impl，macOS 13+）。</summary>
+    public ulong TextureViewID;
+
+    /// <summary>+16 metadata：(minLODClamp 的 float 位模式) | ((uint64)metadata &lt;&lt; 32)。
+    /// 普通 2D 非数组 SRV：minLODClamp=0、metadata=0 → 0。</summary>
+    public ulong Metadata;
+}
+
+/// <summary>
+/// MSC 4.0 的 argument buffer 中 sampler 描述符（24 字节）。
+/// 字段布局即 <see cref="IRDescriptorTableEntry"/>；语义由
+/// <c>IRDescriptorTableSetSampler</c> 定义：
+/// +0(gpuVA)=sampler.gpuResourceID，+8(textureViewID)=0，+16(metadata)=lodBias 的 float 位模式。
+/// sampler 需创建时 supportArgumentBuffers=YES，否则 gpuResourceID 返回 0。
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct SamplerDescriptor
+{
+    /// <summary>+0 gpuVA：sampler.gpuResourceID。</summary>
+    public ulong GpuVA;
+
+    /// <summary>+8 textureViewID：sampler 固定为 0。</summary>
+    public ulong TextureViewID;
+
+    /// <summary>+16 metadata：lodBias 的 float 位模式；无 bias 写 0。</summary>
+    public ulong Metadata;
 }

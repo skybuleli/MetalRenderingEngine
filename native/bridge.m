@@ -737,6 +737,16 @@ uint64_t MTLTexture_bytesPerRow(mtl_handle_t texture, uint64_t mip_level) {
     return (uint64_t)(width * bpp);
 }
 
+/* 获取 texture 的 GPU 资源标识（MTLResourceID._impl）。
+ * 对应 Metal: [MTLTexture gpuResourceID]。
+ * 用于 Phase 10 描述符堆绑定：把 texture 写入 MSC 自定义描述符堆条目。
+ * texture 需具备 ShaderRead usage（创建时 usage 位含 1）。 */
+uint64_t MTLTexture_gpuResourceID(mtl_handle_t texture) {
+    if (texture == MTL_NULL_HANDLE) return 0;
+    id<MTLTexture> tex = H2ID(texture);
+    return (uint64_t)[tex gpuResourceID]._impl;
+}
+
 uint64_t MTLTexture_getBytes(mtl_handle_t texture, void *dst, uint64_t dst_size, uint64_t mip_level) {
     if (texture == MTL_NULL_HANDLE || dst == NULL || dst_size == 0) return 0;
     id<MTLTexture> tex = H2ID(texture);
@@ -804,8 +814,21 @@ mtl_handle_t MTLDevice_newSamplerState(mtl_handle_t device, const struct WMTSamp
     sd.lodMinClamp = info->lod_min_clamp;
     sd.lodMaxClamp = info->lod_max_clamp;
     if (info->compare_function >= 0) sd.compareFunction = (MTLCompareFunction)info->compare_function;
+    /* Phase 10: sampler 进 MSC 描述符堆必需 supportArgumentBuffers=YES，
+     * 否则 [sampler gpuResourceID] 返回 0（DXMT winemetal_unix.c:195-198 验证）。 */
+    sd.supportArgumentBuffers = YES;
     id<MTLSamplerState> sampler = [dev newSamplerStateWithDescriptor:sd];
     return sampler ? ID2H(sampler) : MTL_NULL_HANDLE;
+}
+
+/* 获取 sampler 的 GPU 资源标识（MTLResourceID._impl）。
+ * 对应 Metal: [MTLSamplerState gpuResourceID]。
+ * 必须在创建 sampler 时设 supportArgumentBuffers=YES（见上函数），否则返回 0。
+ * 用于 Phase 10 描述符堆绑定：把 sampler 写入 MSC 自定义描述符堆条目。 */
+uint64_t MTLSamplerState_gpuResourceID(mtl_handle_t sampler) {
+    if (sampler == MTL_NULL_HANDLE) return 0;
+    id<MTLSamplerState> s = H2ID(sampler);
+    return (uint64_t)[s gpuResourceID]._impl;
 }
 
 /* ============================================================
