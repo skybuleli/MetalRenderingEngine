@@ -124,6 +124,22 @@ mtl_handle_t MTLLibrary_newFunctionWithName(mtl_handle_t library, const char *na
     return fn ? ID2H(fn) : MTL_NULL_HANDLE;
 }
 
+/* Phase 9E: newLibraryWithSource —— 仅 SpirvCross 路径使用（AGENTS.md §3.3 例外） */
+mtl_handle_t MTLDevice_newLibraryWithSource(mtl_handle_t device,
+                                             const char *source,
+                                             mtl_handle_t *err_out) {
+    if (err_out) *err_out = MTL_NULL_HANDLE;
+    if (device == MTL_NULL_HANDLE || source == NULL) return MTL_NULL_HANDLE;
+    id<MTLDevice> dev = H2ID(device);
+    NSString *src = [[NSString alloc] initWithUTF8String:source];
+    MTLCompileOptions *opts = [[MTLCompileOptions alloc] init];
+    opts.languageVersion = MTLLanguageVersion3_1;
+    NSError *err = nil;
+    id<MTLLibrary> lib = [dev newLibraryWithSource:src options:opts error:&err];
+    if (!lib && err_out) *err_out = ID2H(err);
+    return lib ? ID2H(lib) : MTL_NULL_HANDLE;
+}
+
 /* ============================================================
  *  MTLComputePipelineState
  * ============================================================ */

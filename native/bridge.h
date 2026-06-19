@@ -133,6 +133,13 @@ mtl_handle_t MTLDevice_newLibrary(mtl_handle_t device,
 /* name 为 UTF-8 C 字符串；找不到返回 MTL_NULL_HANDLE */
 mtl_handle_t MTLLibrary_newFunctionWithName(mtl_handle_t library, const char *name);
 
+/* Phase 9E: 从 MSL 源码创建 library（仅 SpirvCross 路径使用）。
+ * 失败时返回 MTL_NULL_HANDLE 并把 NSError 句柄写入 *err_out。
+ * 成功时 *err_out 写 MTL_NULL_HANDLE。 */
+mtl_handle_t MTLDevice_newLibraryWithSource(mtl_handle_t device,
+                                             const char *source,
+                                             mtl_handle_t *err_out);
+
 /* ============================================================
  *  MTLComputePipelineState
  * ============================================================ */

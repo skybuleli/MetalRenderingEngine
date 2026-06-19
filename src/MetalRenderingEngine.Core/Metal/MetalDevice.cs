@@ -62,6 +62,28 @@ public sealed class MetalDevice : MetalObject
         }
     }
 
+    /// <summary>
+    /// 从 MSL 源码创建 MTLLibrary（仅 SpirvCross 路径使用，AGENTS.md §3.3 例外）。
+    /// </summary>
+    /// <param name="mslSource">Metal Shading Language 源码。</param>
+    /// <returns>MetalLibrary。调用方负责 Dispose。</returns>
+    /// <exception cref="MetalException">编译失败时抛出。</exception>
+    public MetalLibrary NewLibraryWithSource(string mslSource)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(mslSource);
+        unsafe
+        {
+            nuint err = 0;
+            nuint lib = MetalBridge.MTLDevice_newLibraryWithSource(Handle, mslSource, &err);
+            if (lib == 0)
+            {
+                throw MetalException.FromError("MTLDevice newLibraryWithSource",
+                    new MetalError(err));
+            }
+            return new MetalLibrary(lib);
+        }
+    }
+
     /// <summary>构造 compute pipeline state。</summary>
     public MetalComputePipelineState NewComputePipelineState(MetalFunction function)
     {

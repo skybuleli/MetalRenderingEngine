@@ -26,6 +26,11 @@
       <Link>shaders/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- Phase 9F: 反射 JSON 供 MscReflectionParser 测试使用 -->
+    <Content Include="$(MSBuildThisFileDirectory)../../out/shaders/*.reflect.json">
+      <Link>shaders/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

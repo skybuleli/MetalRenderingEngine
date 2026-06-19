@@ -66,6 +66,13 @@ internal static partial class MetalBridge
     public static partial nuint MTLLibrary_newFunctionWithName(nuint library, string name);
 
     // ============================================================
+    //  Phase 9E: MTLDevice_newLibraryWithSource（SpirvCross 路径例外）
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newLibraryWithSource", StringMarshalling = StringMarshalling.Utf8)]
+    public static unsafe partial nuint MTLDevice_newLibraryWithSource(nuint device, string source, nuint* err_out);
+
+    // ============================================================
     //  MTLComputePipelineState
     // ============================================================
 

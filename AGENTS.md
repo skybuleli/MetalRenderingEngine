@@ -148,6 +148,10 @@ C# 运行时通过 metal_new_library_from_data 加载
 
 **禁止：** 运行时编译着色器（`newLibraryWithSource:`）、跳过 MSC 步骤、直接嵌入 DXIL。
 
+> **Phase 9 例外：** `SpirvCrossCompiler` 外部着色器路径允许运行时 `newLibraryWithSource:`
+> （SPIR-V → spirv-cross → MSL 源 → Metal 编译）。引擎自有 Slang 着色器仍必须预编译为 `.metallib`。
+> 此例外仅适用于 `Phase 9E` 的 SpirvCrossCompiler，其他代码路径仍禁止运行时 MSL 编译。
+
 ### 3.4 错误处理
 
 ```csharp
@@ -219,6 +223,8 @@ public MetalLibrary NewLibrary(byte[] data)
 - ❌ 在 bridge.m 中引入复杂逻辑（超过 20 行的函数需要评审）
 - ❌ 依赖仅存在于完整 Xcode 中的工具（如 `xcrun metal`）
 - ❌ 将着色器编译为 MSL 并运行时编译（必须预编译为 .metallib）
+  > **Phase 9 例外：** SpirvCrossCompiler 外部着色器路径允许 `newLibraryWithSource:`，
+  > 仅用于 SPIR-V → MSL 运行时编译。引擎自有 Slang 着色器仍必须预编译。
 
 ### 5.2 需要审批
 
@@ -393,3 +399,5 @@ dotnet test MetalRenderingEngine.sln
 | 2026-06-18 | 3.0 | Phase 6: 批量命令编码器（`MetalCommandList` + wmtcmd 链表回放，P/Invoke 降 99.5%）、补全测试（21 个）、CI（macos-14）、性能 baseline |
 | 2026-06-18 | 3.1 | Phase 6 扩展: MTLSharedEvent + CPU fence（bridge + C# 封装 + 异步 notifyListener 回调）、FenceBenchmarkDemo（MTLFence 阻塞 vs MTLSharedEvent 异步对比）、SharedEvent 测试（26 个总） |
 | 2026-06-18 | 3.2 | Phase 6 扩展: SharedEventPool（预分配 event + signaledValue 复用，解决 Metal ≤64 上限）+ GpuFence 混合策略（AsyncCallback 帧间 / BlockingWait 数据依赖），三模式 benchmark（31 个测试） |
+| 2026-06-19 | 4.0 | Phase 7-8: 3D 渲染基础（DepthStencil/RasterState/VertexDescriptor/InstancedDraw/IndirectDraw/MRT/MSAA）+ ICommandRecorder 抽象层（MetalCommandRecorder 走 MetalCommandList 批量回放）+ PipelineBuilder/RecordingCommandRecorder/LoggingCommandRecorder |
+| 2026-06-19 | 5.0 | Phase 9: 着色器编译器——IShaderCompiler 接口 + SlangCompiler（slangc→DXIL→MSC→.metallib）+ SpirvCrossCompiler（spirv-cross→MSL→newLibraryWithSource）+ ShaderCache 两级缓存（L1 内存 + L2 磁盘 LRU 256MB）+ CachingShaderCompiler 装饰器 + MSC 反射数据模型与 MscReflectionParser + bridge 新增 MTLDevice_newLibraryWithSource（101 个测试） |
