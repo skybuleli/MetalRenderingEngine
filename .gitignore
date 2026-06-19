@@ -9,6 +9,7 @@ obj/
 *.metallib
 *.dxil
 *.generated.slang
+*.reflect.json
 
 # ===== .NET 中间产物 =====
 *.user
