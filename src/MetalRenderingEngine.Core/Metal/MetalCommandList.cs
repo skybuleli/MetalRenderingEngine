@@ -183,13 +183,127 @@ public sealed unsafe class MetalCommandList : IDisposable
     }
 
     /// <summary>录制：DrawPrimitives（primitiveType=0 表示 Triangle）。</summary>
-    public unsafe void RecordDrawPrimitives(int primitiveType, ulong vertexStart, ulong vertexCount)
+    public unsafe void RecordDrawPrimitives(int primitiveType, ulong vertexStart, ulong vertexCount, ulong instanceCount = 1)
     {
         var p = (WMTRenderDraw*)Alloc(sizeof(WMTRenderDraw));
         p->Base.Type = (ushort)WMTRenderCmdType.DrawPrimitives;
         p->PrimitiveType = primitiveType;
         p->VertexStart = vertexStart;
         p->VertexCount = vertexCount;
+        p->InstanceCount = instanceCount;
+        LinkCommand(&p->Base);
+    }
+
+    /// <summary>录制：DrawIndexedPrimitives（Phase 7G，带实例化）。</summary>
+    public unsafe void RecordDrawIndexedPrimitives(ulong indexCount, bool is32Bit, MetalBuffer indexBuffer, ulong indexBufferOffset, ulong instanceCount = 1)
+    {
+        ArgumentNullException.ThrowIfNull(indexBuffer);
+        var p = (WMTRenderDrawIndexed*)Alloc(sizeof(WMTRenderDrawIndexed));
+        p->Base.Type = (ushort)WMTRenderCmdType.DrawIndexedPrimitives;
+        p->PrimitiveType = 0;
+        p->IndexCount = indexCount;
+        p->IndexType = is32Bit ? 1 : 0;
+        p->IndexBuffer = indexBuffer.Handle;
+        p->IndexBufferOffset = indexBufferOffset;
+        p->InstanceCount = instanceCount;
+        LinkCommand(&p->Base);
+    }
+
+    /// <summary>录制：Indirect Draw（Phase 7H）。</summary>
+    public unsafe void RecordDrawPrimitivesIndirect(MetalBuffer indirectBuffer, ulong offset = 0)
+    {
+        ArgumentNullException.ThrowIfNull(indirectBuffer);
+        var p = (WMTRenderDrawIndirect*)Alloc(sizeof(WMTRenderDrawIndirect));
+        p->Base.Type = (ushort)WMTRenderCmdType.DrawIndirectPrimitives;
+        p->PrimitiveType = 0;
+        p->IndirectBuffer = indirectBuffer.Handle;
+        p->IndirectBufferOffset = offset;
+        LinkCommand(&p->Base);
+    }
+
+    /// <summary>录制：Indexed Indirect Draw（Phase 7H）。</summary>
+    public unsafe void RecordDrawIndexedPrimitivesIndirect(MetalBuffer indexBuffer, MetalBuffer indirectBuffer, ulong offset = 0)
+    {
+        ArgumentNullException.ThrowIfNull(indexBuffer);
+        ArgumentNullException.ThrowIfNull(indirectBuffer);
+        var p = (WMTRenderDrawIndexedIndirect*)Alloc(sizeof(WMTRenderDrawIndexedIndirect));
+        p->Base.Type = (ushort)WMTRenderCmdType.DrawIndexedIndirectPrimitives;
+        p->PrimitiveType = 0;
+        p->IndexType = 1; /* uint32 */
+        p->IndexBuffer = indexBuffer.Handle;
+        p->IndirectBuffer = indirectBuffer.Handle;
+        p->IndirectBufferOffset = offset;
+        LinkCommand(&p->Base);
+    }
+
+    // ══════════ Phase 7D: 光栅化状态命令 ══════════
+
+    /// <summary>录制：SetCullMode。</summary>
+    public unsafe void RecordSetCullMode(MTLCullMode mode)
+    {
+        var p = (WMTRenderSetCullMode*)Alloc(sizeof(WMTRenderSetCullMode));
+        p->Base.Type = (ushort)WMTRenderCmdType.SetCullMode;
+        p->CullMode = (int)mode;
+        LinkCommand(&p->Base);
+    }
+
+    /// <summary>录制：SetFrontFacing。</summary>
+    public unsafe void RecordSetFrontFacing(MTLWinding winding)
+    {
+        var p = (WMTRenderSetFrontFacing*)Alloc(sizeof(WMTRenderSetFrontFacing));
+        p->Base.Type = (ushort)WMTRenderCmdType.SetFrontFacing;
+        p->Winding = (int)winding;
+        LinkCommand(&p->Base);
+    }
+
+    /// <summary>录制：SetDepthBias。</summary>
+    public unsafe void RecordSetDepthBias(float bias, float slopeScale, float clamp)
+    {
+        var p = (WMTRenderSetDepthBias*)Alloc(sizeof(WMTRenderSetDepthBias));
+        p->Base.Type = (ushort)WMTRenderCmdType.SetDepthBias;
+        p->Bias = bias;
+        p->SlopeScale = slopeScale;
+        p->Clamp = clamp;
+        LinkCommand(&p->Base);
+    }
+
+    /// <summary>录制：SetDepthClipMode。</summary>
+    public unsafe void RecordSetDepthClipMode(MTLDepthClipMode mode)
+    {
+        var p = (WMTRenderSetDepthClipMode*)Alloc(sizeof(WMTRenderSetDepthClipMode));
+        p->Base.Type = (ushort)WMTRenderCmdType.SetDepthClipMode;
+        p->ClipMode = (int)mode;
+        LinkCommand(&p->Base);
+    }
+
+    /// <summary>录制：SetTriangleFillMode。</summary>
+    public unsafe void RecordSetTriangleFillMode(MTLTriangleFillMode mode)
+    {
+        var p = (WMTRenderSetTriangleFillMode*)Alloc(sizeof(WMTRenderSetTriangleFillMode));
+        p->Base.Type = (ushort)WMTRenderCmdType.SetTriangleFillMode;
+        p->FillMode = (int)mode;
+        LinkCommand(&p->Base);
+    }
+
+    // ══════════ Phase 7E: 深度/模板状态命令 ══════════
+
+    /// <summary>录制：SetDepthStencilState。</summary>
+    public unsafe void RecordSetDepthStencilState(MetalDepthStencilState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        var p = (WMTRenderSetDepthStencilState*)Alloc(sizeof(WMTRenderSetDepthStencilState));
+        p->Base.Type = (ushort)WMTRenderCmdType.SetDepthStencilState;
+        p->State = state.Handle;
+        LinkCommand(&p->Base);
+    }
+
+    /// <summary>录制：SetStencilReference。</summary>
+    public unsafe void RecordSetStencilReference(uint front, uint back)
+    {
+        var p = (WMTRenderSetStencilReference*)Alloc(sizeof(WMTRenderSetStencilReference));
+        p->Base.Type = (ushort)WMTRenderCmdType.SetStencilReference;
+        p->Front = front;
+        p->Back = back;
         LinkCommand(&p->Base);
     }
 

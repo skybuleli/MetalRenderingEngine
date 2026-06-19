@@ -71,6 +71,7 @@ public struct WMTRenderPipelineDesc
     public int DepthPixelFormat;
     public int StencilPixelFormat;
     public int SampleCount;
+    public WMTVertexDescriptor VertexDescriptor;  // Phase 7F
 }
 
 /// <summary>WMTRenderPipelineDesc 扩展方法（结构体方法不能 ref 返回 this 字段，CS8170）。</summary>
@@ -79,6 +80,78 @@ public static class WMTRenderPipelineDescExtensions
     /// <summary>通过索引访问颜色附件。</summary>
     public static ref WMTColorAttachment ColorAttachmentAt(this ref WMTRenderPipelineDesc desc, int i)
         => ref desc.Colors[i];
+}
+
+/// <summary>
+/// Phase 7I: WMTRenderPipelineDesc 的 fluent builder。
+/// MRT (≤8 color attachments) + depth/stencil + vertex descriptor 的链式构造。
+/// </summary>
+public sealed class RenderPipelineDescBuilder
+{
+    private WMTRenderPipelineDesc _desc = new()
+    {
+        ColorCount = 0,
+        SampleCount = 1,
+    };
+
+    /// <summary>添加一个颜色附件（返回 this 以链式调用）。</summary>
+    public RenderPipelineDescBuilder WithColorAttachment(int index, MTLPixelFormat format)
+    {
+        if (index is < 0 or >= 8) throw new ArgumentOutOfRangeException(nameof(index));
+        ref var att = ref _desc.ColorAttachmentAt(index);
+        att.PixelFormat = (int)format;
+        att.WriteMask = 0xF;  // RGBA 全写
+        if (index + 1 > _desc.ColorCount) _desc.ColorCount = index + 1;
+        return this;
+    }
+
+    /// <summary>添加带 blend 的颜色附件。</summary>
+    public RenderPipelineDescBuilder WithBlendedColorAttachment(int index, MTLPixelFormat format,
+        MTLBlendFactor srcRgb = MTLBlendFactor.SourceAlpha,
+        MTLBlendFactor dstRgb = MTLBlendFactor.OneMinusSourceAlpha)
+    {
+        WithColorAttachment(index, format);
+        ref var att = ref _desc.ColorAttachmentAt(index);
+        att.BlendingEnabled = 1;
+        att.SrcRgbBlendFactor = (int)srcRgb;
+        att.DstRgbBlendFactor = (int)dstRgb;
+        att.SrcAlphaBlendFactor = (int)MTLBlendFactor.One;
+        att.DstAlphaBlendFactor = (int)MTLBlendFactor.OneMinusSourceAlpha;
+        att.RgbBlendOp = (int)MTLBlendOperation.Add;
+        att.AlphaBlendOp = (int)MTLBlendOperation.Add;
+        return this;
+    }
+
+    /// <summary>设置深度附件像素格式。</summary>
+    public RenderPipelineDescBuilder WithDepth(MTLPixelFormat format)
+    {
+        _desc.DepthPixelFormat = (int)format;
+        return this;
+    }
+
+    /// <summary>设置模板附件像素格式。</summary>
+    public RenderPipelineDescBuilder WithStencil(MTLPixelFormat format)
+    {
+        _desc.StencilPixelFormat = (int)format;
+        return this;
+    }
+
+    /// <summary>设置采样数（MSAA）。</summary>
+    public RenderPipelineDescBuilder WithSampleCount(int sampleCount)
+    {
+        _desc.SampleCount = sampleCount;
+        return this;
+    }
+
+    /// <summary>设置顶点描述符。</summary>
+    public RenderPipelineDescBuilder WithVertexDescriptor(in WMTVertexDescriptor vertexDescriptor)
+    {
+        _desc.VertexDescriptor = vertexDescriptor;
+        return this;
+    }
+
+    /// <summary>构建不可变的描述符副本。</summary>
+    public WMTRenderPipelineDesc Build() => _desc;
 }
 
 /// <summary>
@@ -103,6 +176,8 @@ public struct WMTRenderPassAttachment
     public WMTClearColor ClearColor;
     public float ClearDepth;
     public int ClearStencil;
+    /// <summary>Phase 7K: MSAA resolve target（StoreAction=MultisampleResolve 时使用）。</summary>
+    public nuint ResolveTexture;
 }
 
 /// <summary>
@@ -159,6 +234,33 @@ public struct WMTTextureInfo
     public int SampleCount;
     public int Usage;
     public int Options;
+
+    /// <summary>创建 2D 纹理参数（便利工厂）。</summary>
+    public static WMTTextureInfo Create2D(MTLPixelFormat format, int width, int height,
+        MTLTextureUsage usage = MTLTextureUsage.RenderTarget | MTLTextureUsage.ShaderRead,
+        MTLResourceOptions options = MTLResourceOptions.StorageModeShared)
+        => new()
+        {
+            PixelFormat = (int)format,
+            TextureType = (int)MTLTextureType.Type2D,
+            Width = (ulong)width, Height = (ulong)height, Depth = 1,
+            MipmapLevels = 1, SampleCount = 1,
+            Usage = (int)usage,
+            Options = (int)options,
+        };
+
+    /// <summary>创建 2D 多采样纹理参数（MSAA，便利工厂）。</summary>
+    public static WMTTextureInfo Create2DMultisample(MTLPixelFormat format, int width, int height, int sampleCount,
+        MTLResourceOptions options = MTLResourceOptions.StorageModePrivate)
+        => new()
+        {
+            PixelFormat = (int)format,
+            TextureType = (int)MTLTextureType.Type2DMultisample,
+            Width = (ulong)width, Height = (ulong)height, Depth = 1,
+            MipmapLevels = 1, SampleCount = sampleCount,
+            Usage = (int)MTLTextureUsage.RenderTarget,
+            Options = (int)options,
+        };
 }
 
 /// <summary>
@@ -190,6 +292,97 @@ public struct WMTOrigin
     public ulong Z;
 
     public WMTOrigin(ulong x, ulong y, ulong z) { X = x; Y = y; Z = z; }
+}
+
+// ============================================================
+// Phase 7F: VertexDescriptor 结构体
+// ============================================================
+
+/// <summary>
+/// 顶点属性描述（C 端 <c>WMTVertexAttributeDesc</c>）。
+/// 4 + 8 + 4 + 4 = 20 字节，C 端自然对齐到 24？实际按 C 布局。
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct WMTVertexAttributeDesc
+{
+    public int Format;         // MTLVertexFormat
+    public ulong Offset;
+    public uint BufferIndex;
+    public uint Pad;           // 对齐填充
+}
+
+/// <summary>
+/// 顶点缓冲区布局描述（C 端 <c>WMTVertexBufferLayoutDesc</c>）。
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct WMTVertexBufferLayoutDesc
+{
+    public ulong Stride;
+    public uint StepFunction;  // MTLVertexStepFunction
+    public uint StepRate;
+}
+
+/// <summary>
+/// 8 个 WMTVertexAttributeDesc 的内联数组。
+/// </summary>
+[InlineArray(8)]
+public struct WMTVertexAttributeDescBuffer8
+{
+    private WMTVertexAttributeDesc _e0;
+}
+
+/// <summary>
+/// 8 个 WMTVertexBufferLayoutDesc 的内联数组。
+/// </summary>
+[InlineArray(8)]
+public struct WMTVertexBufferLayoutDescBuffer8
+{
+    private WMTVertexBufferLayoutDesc _e0;
+}
+
+/// <summary>
+/// 顶点描述符（C 端 <c>WMTVertexDescriptor</c>）。
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct WMTVertexDescriptor
+{
+    public WMTVertexAttributeDescBuffer8 Attributes;
+    public int AttributeCount;
+    public WMTVertexBufferLayoutDescBuffer8 Layouts;
+    public int LayoutCount;
+}
+
+// ============================================================
+// Phase 7A: MTLDepthStencilState 结构体
+// ============================================================
+
+/// <summary>
+/// 单面 stencil 描述（C 端 <c>WMTStencilDescriptor</c>，对应 MTLStencilDescriptor）。
+/// 6 × uint32 = 24 字节。
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct WMTStencilDescriptor
+{
+    public int StencilFailureOperation;    // WMTStencilOperation
+    public int DepthFailureOperation;      // WMTStencilOperation
+    public int DepthStencilPassOperation;  // WMTStencilOperation
+    public int StencilCompareFunction;     // WMTCompareFunction
+    public uint ReadMask;
+    public uint WriteMask;
+}
+
+/// <summary>
+/// 深度/模板状态描述（C 端 <c>WMTDepthStencilDesc</c>，对应 MTLDepthStencilDescriptor）。
+/// 内存布局：4 + 1 + 3(pad) + 24 + 24 = 56 字节，与 C 端一致。
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct WMTDepthStencilDesc
+{
+    public int DepthCompareFunction;    // MTLCompareFunction
+    public byte DepthWriteEnabled;      // 0=禁用写入, 1=启用
+    private byte _pad0, _pad1, _pad2;  // 对齐填充到 4 字节
+    public WMTStencilDescriptor FrontFaceStencil;
+    public WMTStencilDescriptor BackFaceStencil;
 }
 
 // ============================================================

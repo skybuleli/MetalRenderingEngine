@@ -288,6 +288,45 @@ void MTLComputeCommandEncoder_endEncoding(mtl_handle_t encoder) {
 }
 
 /* ============================================================
+ *  Phase 7A: MTLDepthStencilState
+ * ============================================================ */
+
+mtl_handle_t MTLDevice_newDepthStencilState(mtl_handle_t device,
+                                             const struct WMTDepthStencilDesc *desc) {
+    if (device == MTL_NULL_HANDLE || desc == NULL) return MTL_NULL_HANDLE;
+    id<MTLDevice> dev = H2ID(device);
+
+    MTLDepthStencilDescriptor *dsd = [[MTLDepthStencilDescriptor alloc] init];
+    dsd.depthCompareFunction = (MTLCompareFunction)desc->depthCompareFunction;
+    dsd.depthWriteEnabled = desc->depthWriteEnabled ? YES : NO;
+
+    dsd.frontFaceStencil.stencilFailureOperation =
+        (MTLStencilOperation)desc->frontFaceStencil.stencilFailureOperation;
+    dsd.frontFaceStencil.depthFailureOperation =
+        (MTLStencilOperation)desc->frontFaceStencil.depthFailureOperation;
+    dsd.frontFaceStencil.depthStencilPassOperation =
+        (MTLStencilOperation)desc->frontFaceStencil.depthStencilPassOperation;
+    dsd.frontFaceStencil.stencilCompareFunction =
+        (MTLCompareFunction)desc->frontFaceStencil.stencilCompareFunction;
+    dsd.frontFaceStencil.readMask = desc->frontFaceStencil.readMask;
+    dsd.frontFaceStencil.writeMask = desc->frontFaceStencil.writeMask;
+
+    dsd.backFaceStencil.stencilFailureOperation =
+        (MTLStencilOperation)desc->backFaceStencil.stencilFailureOperation;
+    dsd.backFaceStencil.depthFailureOperation =
+        (MTLStencilOperation)desc->backFaceStencil.depthFailureOperation;
+    dsd.backFaceStencil.depthStencilPassOperation =
+        (MTLStencilOperation)desc->backFaceStencil.depthStencilPassOperation;
+    dsd.backFaceStencil.stencilCompareFunction =
+        (MTLCompareFunction)desc->backFaceStencil.stencilCompareFunction;
+    dsd.backFaceStencil.readMask = desc->backFaceStencil.readMask;
+    dsd.backFaceStencil.writeMask = desc->backFaceStencil.writeMask;
+
+    id<MTLDepthStencilState> state = [dev newDepthStencilStateWithDescriptor:dsd];
+    return state ? ID2H(state) : MTL_NULL_HANDLE;
+}
+
+/* ============================================================
  *  MTLRenderPipelineState
  * ============================================================ */
 
@@ -324,6 +363,23 @@ mtl_handle_t MTLDevice_newRenderPipelineState(mtl_handle_t device,
     pd.stencilAttachmentPixelFormat = (MTLPixelFormat)desc->stencil_pixel_format;
     pd.rasterSampleCount = (NSUInteger)desc->sample_count;
 
+    /* Phase 7F: 消费 vertexDescriptor */
+    const struct WMTVertexDescriptor *vd = &desc->vertex_descriptor;
+    if (vd->attributeCount > 0 || vd->layoutCount > 0) {
+        MTLVertexDescriptor *mtlVD = [[MTLVertexDescriptor alloc] init];
+        for (uint32_t i = 0; i < vd->attributeCount && i < 8; i++) {
+            mtlVD.attributes[i].format = (MTLVertexFormat)vd->attributes[i].format;
+            mtlVD.attributes[i].offset = (NSUInteger)vd->attributes[i].offset;
+            mtlVD.attributes[i].bufferIndex = (NSUInteger)vd->attributes[i].bufferIndex;
+        }
+        for (uint32_t i = 0; i < vd->layoutCount && i < 8; i++) {
+            mtlVD.layouts[i].stride = (NSUInteger)vd->layouts[i].stride;
+            mtlVD.layouts[i].stepFunction = (MTLVertexStepFunction)vd->layouts[i].stepFunction;
+            mtlVD.layouts[i].stepRate = (NSUInteger)vd->layouts[i].stepRate;
+        }
+        pd.vertexDescriptor = mtlVD;
+    }
+
     NSError *err = nil;
     id<MTLRenderPipelineState> pso = [dev newRenderPipelineStateWithDescriptor:pd error:&err];
     if (!pso && err_out) *err_out = ID2H(err);
@@ -350,13 +406,23 @@ mtl_handle_t MTLCommandBuffer_renderCommandEncoder(mtl_handle_t cmdbuf,
                 desc->colors[i].clear_color.g,
                 desc->colors[i].clear_color.b,
                 desc->colors[i].clear_color.a);
+            /* Phase 7K: MSAA resolve */
+            if (desc->colors[i].resolve_texture != MTL_NULL_HANDLE) {
+                rpd.colorAttachments[i].resolveTexture = H2ID(desc->colors[i].resolve_texture);
+            }
         }
     }
     if (desc->depth.texture != MTL_NULL_HANDLE) {
         rpd.depthAttachment.texture = H2ID(desc->depth.texture);
+        rpd.depthAttachment.loadAction  = (MTLLoadAction)desc->depth.load_action;
+        rpd.depthAttachment.storeAction = (MTLStoreAction)desc->depth.store_action;
+        rpd.depthAttachment.clearDepth = desc->depth.clear_depth;
     }
     if (desc->stencil.texture != MTL_NULL_HANDLE) {
         rpd.stencilAttachment.texture = H2ID(desc->stencil.texture);
+        rpd.stencilAttachment.loadAction  = (MTLLoadAction)desc->stencil.load_action;
+        rpd.stencilAttachment.storeAction = (MTLStoreAction)desc->stencil.store_action;
+        rpd.stencilAttachment.clearStencil = desc->stencil.clear_stencil;
     }
 
     id<MTLRenderCommandEncoder> enc = [cb renderCommandEncoderWithDescriptor:rpd];
@@ -403,6 +469,20 @@ void MTLRenderCommandEncoder_drawPrimitives(mtl_handle_t encoder,
     [e drawPrimitives:pt vertexStart:(NSUInteger)vertex_start vertexCount:(NSUInteger)vertex_count];
 }
 
+void MTLRenderCommandEncoder_drawPrimitivesInstanced(mtl_handle_t encoder,
+                                                      int primitive_type,
+                                                      uint64_t vertex_start,
+                                                      uint64_t vertex_count,
+                                                      uint64_t instance_count) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    MTLPrimitiveType pt = (primitive_type == 0) ? MTLPrimitiveTypeTriangle : MTLPrimitiveTypeTriangle;
+    [e drawPrimitives:pt
+          vertexStart:(NSUInteger)vertex_start
+          vertexCount:(NSUInteger)vertex_count
+        instanceCount:(NSUInteger)instance_count];
+}
+
 void MTLRenderCommandEncoder_drawIndexedPrimitives(mtl_handle_t encoder,
                                                     int primitive_type,
                                                     uint64_t index_count,
@@ -418,6 +498,55 @@ void MTLRenderCommandEncoder_drawIndexedPrimitives(mtl_handle_t encoder,
                    indexType:it
                  indexBuffer:H2ID(index_buffer)
            indexBufferOffset:(NSUInteger)index_buffer_offset];
+}
+
+void MTLRenderCommandEncoder_drawIndexedPrimitivesInstanced(mtl_handle_t encoder,
+                                                             int primitive_type,
+                                                             uint64_t index_count,
+                                                             int index_type,
+                                                             mtl_handle_t index_buffer,
+                                                             uint64_t index_buffer_offset,
+                                                             uint64_t instance_count) {
+    if (encoder == MTL_NULL_HANDLE || index_buffer == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    MTLPrimitiveType pt = (primitive_type == 0) ? MTLPrimitiveTypeTriangle : MTLPrimitiveTypeTriangle;
+    MTLIndexType it = (index_type == 0) ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32;
+    [e drawIndexedPrimitives:pt
+                  indexCount:(NSUInteger)index_count
+                   indexType:it
+                 indexBuffer:H2ID(index_buffer)
+           indexBufferOffset:(NSUInteger)index_buffer_offset
+               instanceCount:(NSUInteger)instance_count];
+}
+
+void MTLRenderCommandEncoder_drawPrimitivesIndirect(mtl_handle_t encoder,
+                                                     int primitive_type,
+                                                     mtl_handle_t indirect_buffer,
+                                                     uint64_t indirect_buffer_offset) {
+    if (encoder == MTL_NULL_HANDLE || indirect_buffer == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    MTLPrimitiveType pt = (primitive_type == 0) ? MTLPrimitiveTypeTriangle : MTLPrimitiveTypeTriangle;
+    [e drawPrimitives:pt
+       indirectBuffer:H2ID(indirect_buffer)
+ indirectBufferOffset:(NSUInteger)indirect_buffer_offset];
+}
+
+void MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect(mtl_handle_t encoder,
+                                                            int primitive_type,
+                                                            int index_type,
+                                                            mtl_handle_t index_buffer,
+                                                            mtl_handle_t indirect_buffer,
+                                                            uint64_t indirect_buffer_offset) {
+    if (encoder == MTL_NULL_HANDLE || index_buffer == MTL_NULL_HANDLE || indirect_buffer == MTL_NULL_HANDLE) return;
+    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    MTLPrimitiveType pt = (primitive_type == 0) ? MTLPrimitiveTypeTriangle : MTLPrimitiveTypeTriangle;
+    MTLIndexType it = (index_type == 0) ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32;
+    [e drawIndexedPrimitives:pt
+                   indexType:it
+                 indexBuffer:H2ID(index_buffer)
+           indexBufferOffset:0
+              indirectBuffer:H2ID(indirect_buffer)
+    indirectBufferOffset:(NSUInteger)indirect_buffer_offset];
 }
 
 void MTLRenderCommandEncoder_endEncoding(mtl_handle_t encoder) {
@@ -557,6 +686,7 @@ static NSUInteger pixel_format_bytes_per_pixel(MTLPixelFormat pf) {
     case MTLPixelFormatBGRA8Unorm:     return 4;
     case MTLPixelFormatRGBA32Float:    return 16;
     case MTLPixelFormatDepth32Float:   return 4;
+    case MTLPixelFormatDepth32Float_Stencil8: return 5;  /* packed: 32-bit depth + 8-bit stencil (按 8 字节对齐) */
     default:                           return 4;  /* 保守默认 */
     }
 }
@@ -600,7 +730,7 @@ mtl_handle_t MTLDevice_newTexture(mtl_handle_t device, const struct WMTTextureIn
                                                                                    width:(NSUInteger)info->width
                                                                                   height:(NSUInteger)info->height
                                                                               mipmapped:(info->mipmap_levels > 1)];
-    td.textureType = (info->texture_type == 2) ? MTLTextureType2D : MTLTextureType2D;
+    td.textureType = (info->texture_type == 5) ? MTLTextureType2DMultisample : MTLTextureType2D;
     td.storageMode = (MTLStorageMode)((info->options >> 4) & 0xF);
     td.usage = (MTLTextureUsage)info->usage;
     td.mipmapLevelCount = (NSUInteger)(info->mipmap_levels > 0 ? info->mipmap_levels : 1);
@@ -805,6 +935,49 @@ void MTLRenderCommandEncoder_updateFence(mtl_handle_t encoder, mtl_handle_t fenc
 }
 
 /* ============================================================
+ *  Phase 7D: 光栅化状态 setters
+ * ============================================================ */
+
+void MTLRenderCommandEncoder_setCullMode(mtl_handle_t encoder, int cull_mode) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    [H2ID(encoder) setCullMode:(MTLCullMode)cull_mode];
+}
+
+void MTLRenderCommandEncoder_setFrontFacingWinding(mtl_handle_t encoder, int winding) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    [H2ID(encoder) setFrontFacingWinding:(MTLWinding)winding];
+}
+
+void MTLRenderCommandEncoder_setDepthBias(mtl_handle_t encoder, float bias, float slope_scale, float clamp) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    [H2ID(encoder) setDepthBias:bias slopeScale:slope_scale clamp:clamp];
+}
+
+void MTLRenderCommandEncoder_setDepthClipMode(mtl_handle_t encoder, int clip_mode) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    [H2ID(encoder) setDepthClipMode:(MTLDepthClipMode)clip_mode];
+}
+
+void MTLRenderCommandEncoder_setTriangleFillMode(mtl_handle_t encoder, int fill_mode) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    [H2ID(encoder) setTriangleFillMode:(MTLTriangleFillMode)fill_mode];
+}
+
+/* ============================================================
+ *  Phase 7E: 深度/模板状态 setters
+ * ============================================================ */
+
+void MTLRenderCommandEncoder_setDepthStencilState(mtl_handle_t encoder, mtl_handle_t state) {
+    if (encoder == MTL_NULL_HANDLE || state == MTL_NULL_HANDLE) return;
+    [H2ID(encoder) setDepthStencilState:H2ID(state)];
+}
+
+void MTLRenderCommandEncoder_setStencilReferenceValue(mtl_handle_t encoder, uint32_t front, uint32_t back) {
+    if (encoder == MTL_NULL_HANDLE) return;
+    [H2ID(encoder) setStencilFrontReferenceValue:front backReferenceValue:back];
+}
+
+/* ============================================================
  *  Phase 3.5: MTLArgumentEncoder
  * ============================================================ */
 
@@ -944,14 +1117,93 @@ static void replay_render_cmd(id<MTLRenderCommandEncoder> e,
     case WMTRenderCmdDrawPrimitives: {
         const struct wmtcmd_render_draw *b = (const void*)cmd;
         /* primitive_type=0 → Triangle（与现有 drawPrimitives 约定一致） */
+        if (b->instance_count > 1) {
+            [e drawPrimitives:MTLPrimitiveTypeTriangle
+                  vertexStart:(NSUInteger)b->vertex_start
+                  vertexCount:(NSUInteger)b->vertex_count
+                instanceCount:(NSUInteger)b->instance_count];
+        } else {
+            [e drawPrimitives:MTLPrimitiveTypeTriangle
+                  vertexStart:(NSUInteger)b->vertex_start
+                  vertexCount:(NSUInteger)b->vertex_count];
+        }
+        break;
+    }
+    case WMTRenderCmdDrawIndexedPrimitives: {
+        const struct wmtcmd_render_draw_indexed *b = (const void*)cmd;
+        MTLIndexType it = (b->index_type == 0) ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32;
+        if (b->instance_count > 1) {
+            [e drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                          indexCount:(NSUInteger)b->index_count
+                           indexType:it
+                         indexBuffer:H2ID(b->index_buffer)
+                   indexBufferOffset:(NSUInteger)b->index_buffer_offset
+                       instanceCount:(NSUInteger)b->instance_count];
+        } else {
+            [e drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                          indexCount:(NSUInteger)b->index_count
+                           indexType:it
+                         indexBuffer:H2ID(b->index_buffer)
+                   indexBufferOffset:(NSUInteger)b->index_buffer_offset];
+        }
+        break;
+    }
+    case WMTRenderCmdDrawIndirectPrimitives: {
+        const struct wmtcmd_render_draw_indirect *b = (const void*)cmd;
         [e drawPrimitives:MTLPrimitiveTypeTriangle
-              vertexStart:(NSUInteger)b->vertex_start
-              vertexCount:(NSUInteger)b->vertex_count];
+           indirectBuffer:H2ID(b->indirect_buffer)
+     indirectBufferOffset:(NSUInteger)b->indirect_buffer_offset];
+        break;
+    }
+    case WMTRenderCmdDrawIndexedIndirectPrimitives: {
+        const struct wmtcmd_render_draw_indexed_indirect *b = (const void*)cmd;
+        MTLIndexType it = (b->index_type == 0) ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32;
+        [e drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                       indexType:it
+                     indexBuffer:H2ID(b->index_buffer)
+               indexBufferOffset:0
+                  indirectBuffer:H2ID(b->indirect_buffer)
+        indirectBufferOffset:(NSUInteger)b->indirect_buffer_offset];
         break;
     }
     case WMTRenderCmdEndEncoding:
         [e endEncoding];
         break;
+    case WMTRenderCmdSetCullMode: {
+        const struct wmtcmd_render_setcullmode *b = (const void*)cmd;
+        [e setCullMode:(MTLCullMode)b->cull_mode];
+        break;
+    }
+    case WMTRenderCmdSetFrontFacing: {
+        const struct wmtcmd_render_setfrontfacing *b = (const void*)cmd;
+        [e setFrontFacingWinding:(MTLWinding)b->winding];
+        break;
+    }
+    case WMTRenderCmdSetDepthBias: {
+        const struct wmtcmd_render_setdepthbias *b = (const void*)cmd;
+        [e setDepthBias:b->bias slopeScale:b->slope_scale clamp:b->clamp];
+        break;
+    }
+    case WMTRenderCmdSetDepthClipMode: {
+        const struct wmtcmd_render_setdepthclipmode *b = (const void*)cmd;
+        [e setDepthClipMode:(MTLDepthClipMode)b->clip_mode];
+        break;
+    }
+    case WMTRenderCmdSetTriangleFillMode: {
+        const struct wmtcmd_render_settrianglefillmode *b = (const void*)cmd;
+        [e setTriangleFillMode:(MTLTriangleFillMode)b->fill_mode];
+        break;
+    }
+    case WMTRenderCmdSetDepthStencilState: {
+        const struct wmtcmd_render_setdepthstencilstate *b = (const void*)cmd;
+        [e setDepthStencilState:H2ID(b->state)];
+        break;
+    }
+    case WMTRenderCmdSetStencilReference: {
+        const struct wmtcmd_render_setstencilreference *b = (const void*)cmd;
+        [e setStencilFrontReferenceValue:b->front backReferenceValue:b->back];
+        break;
+    }
     default:
         break;
     }

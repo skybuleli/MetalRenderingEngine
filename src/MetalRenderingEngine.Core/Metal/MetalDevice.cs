@@ -130,7 +130,7 @@ public sealed class MetalDevice : MetalObject
             WMTTextureInfo local = info;
             nuint h = MetalBridge.MTLDevice_newTexture(Handle, &local);
             if (h == 0) throw new MetalException("MTLDevice newTextureWithDescriptor returned nil.");
-            return new MetalTexture(h, (uint)info.Width, (uint)info.Height);
+            return new MetalTexture(h, (uint)info.Width, (uint)info.Height, (MTLPixelFormat)info.PixelFormat);
         }
     }
 
@@ -160,5 +160,17 @@ public sealed class MetalDevice : MetalObject
         nuint h = MetalBridge.MTLDevice_newSharedEvent(Handle);
         if (h == 0) throw new MetalException("MTLDevice newSharedEvent returned nil.");
         return new MetalSharedEvent(h);
+    }
+
+    /// <summary>创建 MTLDepthStencilState。</summary>
+    public MetalDepthStencilState NewDepthStencilState(in WMTDepthStencilDesc desc)
+    {
+        unsafe
+        {
+            WMTDepthStencilDesc local = desc;
+            nuint h = MetalBridge.MTLDevice_newDepthStencilState(Handle, &local);
+            if (h == 0) throw new MetalException("MTLDevice newDepthStencilState returned nil.");
+            return new MetalDepthStencilState(h);
+        }
     }
 }

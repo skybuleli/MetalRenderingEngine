@@ -200,6 +200,50 @@ void MTLComputeCommandEncoder_dispatchThreadgroups(mtl_handle_t encoder,
 void MTLComputeCommandEncoder_endEncoding(mtl_handle_t encoder);
 
 /* ============================================================
+ *  Phase 7A: MTLDepthStencilState
+ * ============================================================ */
+
+/* MTLStencilOperation（与 ObjC 枚举对齐） */
+enum WMTStencilOperation {
+    WMTStencilOperationKeep            = 0,
+    WMTStencilOperationZero            = 1,
+    WMTStencilOperationReplace         = 2,
+    WMTStencilOperationIncrementClamp  = 3,
+    WMTStencilOperationDecrementClamp  = 4,
+    WMTStencilOperationInvert          = 5,
+    WMTStencilOperationIncrementWrap   = 6,
+    WMTStencilOperationDecrementWrap   = 7,
+};
+
+/* 单面 stencil 状态描述（对应 MTLStencilDescriptor）。
+ * readMask/writeMask 与 Metal 一致：比较前先 (ref & readMask) op (stencil & readMask)。 */
+struct WMTStencilDescriptor {
+    uint32_t stencilFailureOperation;   /* WMTStencilOperation */
+    uint32_t depthFailureOperation;     /* WMTStencilOperation */
+    uint32_t depthStencilPassOperation; /* WMTStencilOperation */
+    uint32_t stencilCompareFunction;    /* WMTCompareFunction */
+    uint32_t readMask;
+    uint32_t writeMask;
+};
+
+/* 深度/模板状态描述（对应 MTLDepthStencilDescriptor）。
+ * 内存布局：4(depthCompareFn) + 1(depthWrite) + 3(pad) +
+ *           24(frontFaceStencil) + 24(backFaceStencil) = 56 字节。
+ * C# 端用 LayoutKind.Sequential + 显式 padding 对齐。 */
+struct WMTDepthStencilDesc {
+    uint32_t depthCompareFunction;   /* WMTCompareFunction；Never=0 表示禁用深度测试 */
+    uint8_t  depthWriteEnabled;      /* 0=禁用写入, 1=启用 */
+    uint8_t  _pad[3];                /* 对齐填充 */
+    struct WMTStencilDescriptor frontFaceStencil;
+    struct WMTStencilDescriptor backFaceStencil;
+};
+
+/* 从描述创建 MTLDepthStencilState（retained handle，调用方负责释放）。
+ * 对应 ObjC: [MTLDevice newDepthStencilStateWithDescriptor:] */
+mtl_handle_t MTLDevice_newDepthStencilState(mtl_handle_t device,
+                                             const struct WMTDepthStencilDesc *desc);
+
+/* ============================================================
  *  MTLRenderPipelineState
  * ============================================================ */
 
@@ -211,6 +255,7 @@ enum WMTPixelFormat {
     WMTPixelFormatBGRA8Unorm   = 80,
     WMTPixelFormatRGBA32Float  = 125,
     WMTPixelFormatDepth32Float = 252,
+    WMTPixelFormatDepth32Float_Stencil8 = 260,  /* Phase 7C: packed depth+stencil (Apple Silicon 原生) */
 };
 
 /* 颜色附件描述（Phase 2 基础 + Phase 3.5 blend 扩展） */
@@ -226,12 +271,52 @@ struct WMTColorAttachment {
     int alpha_blend_op;         /* WMTBlendOperation */
 };
 
+/* Phase 7F: VertexDescriptor（需在 WMTRenderPipelineDesc 之前声明） */
+enum WMTVertexFormat {
+    WMTVertexFormatInvalid = 0,
+    WMTVertexFormatFloat2  = 29,
+    WMTVertexFormatFloat3  = 30,
+    WMTVertexFormatFloat4  = 31,
+    WMTVertexFormatUChar4  = 12,
+    WMTVertexFormatUChar4Normalized = 13,
+    WMTVertexFormatUInt    = 36,
+};
+
+/* 注意：值必须与 MTLVertexStepFunction 原枚举对齐
+ * (Constant=0, PerVertex=1, PerInstance=2) */
+enum WMTVertexStepFunction {
+    WMTVertexStepFunctionConstant    = 0,
+    WMTVertexStepFunctionPerVertex   = 1,
+    WMTVertexStepFunctionPerInstance = 2,
+};
+
+struct WMTVertexAttributeDesc {
+    int format;
+    uint64_t offset;
+    uint32_t bufferIndex;
+    uint32_t _pad;
+};
+
+struct WMTVertexBufferLayoutDesc {
+    uint64_t stride;
+    uint32_t stepFunction;
+    uint32_t stepRate;
+};
+
+struct WMTVertexDescriptor {
+    struct WMTVertexAttributeDesc attributes[8];
+    uint32_t attributeCount;
+    struct WMTVertexBufferLayoutDesc layouts[8];
+    uint32_t layoutCount;
+};
+
 struct WMTRenderPipelineDesc {
     struct WMTColorAttachment colors[8];
     int color_count;              /* 实际使用的颜色附件数 */
     int depth_pixel_format;       /* 0 = None */
     int stencil_pixel_format;     /* 0 = None */
     int sample_count;             /* 默认 1 */
+    struct WMTVertexDescriptor vertex_descriptor;  /* Phase 7F */
 };
 
 mtl_handle_t MTLDevice_newRenderPipelineState(mtl_handle_t device,
@@ -267,6 +352,7 @@ struct WMTRenderPassAttachment {
     struct WMTClearColor clear_color;
     float clear_depth;
     int clear_stencil;
+    mtl_handle_t resolve_texture;  /* Phase 7K: MSAA resolve target */
 };
 
 struct WMTRenderPassDesc {
@@ -291,12 +377,41 @@ void MTLRenderCommandEncoder_drawPrimitives(mtl_handle_t encoder,
                                              uint64_t vertex_start,
                                              uint64_t vertex_count);
 
+/* Phase 7G: Instanced draw */
+void MTLRenderCommandEncoder_drawPrimitivesInstanced(mtl_handle_t encoder,
+                                                      int primitive_type,
+                                                      uint64_t vertex_start,
+                                                      uint64_t vertex_count,
+                                                      uint64_t instance_count);
+
 void MTLRenderCommandEncoder_drawIndexedPrimitives(mtl_handle_t encoder,
                                                     int primitive_type,      /* 0=triangle */
                                                     uint64_t index_count,
                                                     int index_type,          /* 0=uint16, 1=uint32 */
                                                     mtl_handle_t index_buffer,
                                                     uint64_t index_buffer_offset);
+
+/* Phase 7G: Instanced indexed draw */
+void MTLRenderCommandEncoder_drawIndexedPrimitivesInstanced(mtl_handle_t encoder,
+                                                             int primitive_type,
+                                                             uint64_t index_count,
+                                                             int index_type,
+                                                             mtl_handle_t index_buffer,
+                                                             uint64_t index_buffer_offset,
+                                                             uint64_t instance_count);
+
+/* Phase 7H: Indirect draw */
+void MTLRenderCommandEncoder_drawPrimitivesIndirect(mtl_handle_t encoder,
+                                                     int primitive_type,
+                                                     mtl_handle_t indirect_buffer,
+                                                     uint64_t indirect_buffer_offset);
+
+void MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect(mtl_handle_t encoder,
+                                                            int primitive_type,
+                                                            int index_type,
+                                                            mtl_handle_t index_buffer,
+                                                            mtl_handle_t indirect_buffer,
+                                                            uint64_t indirect_buffer_offset);
 void MTLRenderCommandEncoder_endEncoding(mtl_handle_t encoder);
 
 /* ============================================================
@@ -394,6 +509,31 @@ enum WMTCompareFunction {
 enum WMTRenderStages {
     WMTRenderStageVertex   = 1,
     WMTRenderStageFragment = 2,
+};
+
+/* ============================================================
+ *  Phase 7D: 光栅化状态枚举
+ * ============================================================ */
+
+enum WMTCullMode {
+    WMTCullModeNone  = 0,
+    WMTCullModeFront = 1,
+    WMTCullModeBack  = 2,
+};
+
+enum WMTWinding {
+    WMTWindingClockwise        = 0,
+    WMTWindingCounterClockwise = 1,
+};
+
+enum WMTDepthClipMode {
+    WMTDepthClipModeClip   = 0,
+    WMTDepthClipModeClamp  = 1,
+};
+
+enum WMTTriangleFillMode {
+    WMTTriangleFillModeFill  = 0,
+    WMTTriangleFillModeLines = 1,
 };
 
 /* ============================================================
@@ -511,6 +651,23 @@ void MTLRenderCommandEncoder_waitForFence(mtl_handle_t encoder, mtl_handle_t fen
 void MTLRenderCommandEncoder_updateFence(mtl_handle_t encoder, mtl_handle_t fence, uint32_t after_stages);
 
 /* ============================================================
+ *  Phase 7D: 光栅化状态 setters
+ * ============================================================ */
+
+void MTLRenderCommandEncoder_setCullMode(mtl_handle_t encoder, int cull_mode);
+void MTLRenderCommandEncoder_setFrontFacingWinding(mtl_handle_t encoder, int winding);
+void MTLRenderCommandEncoder_setDepthBias(mtl_handle_t encoder, float bias, float slope_scale, float clamp);
+void MTLRenderCommandEncoder_setDepthClipMode(mtl_handle_t encoder, int clip_mode);
+void MTLRenderCommandEncoder_setTriangleFillMode(mtl_handle_t encoder, int fill_mode);
+
+/* ============================================================
+ *  Phase 7E: 深度/模板状态 setters
+ * ============================================================ */
+
+void MTLRenderCommandEncoder_setDepthStencilState(mtl_handle_t encoder, mtl_handle_t state);
+void MTLRenderCommandEncoder_setStencilReferenceValue(mtl_handle_t encoder, uint32_t front, uint32_t back);
+
+/* ============================================================
  *  Phase 3.5: MTLArgumentEncoder
  *  MSC 4.0 把 texture/sampler 也放进 buffer(2) argument buffer，
  *  无法用 setFragmentTexture 直接绑定，必须用 ArgumentEncoder 编码。
@@ -604,6 +761,19 @@ enum WMTRenderCmdType {
     WMTRenderCmdSetFragmentBytes,
     WMTRenderCmdUseResource,
     WMTRenderCmdDrawPrimitives,
+    /* Phase 7D: 光栅化状态 */
+    WMTRenderCmdSetCullMode,
+    WMTRenderCmdSetFrontFacing,
+    WMTRenderCmdSetDepthBias,
+    WMTRenderCmdSetDepthClipMode,
+    WMTRenderCmdSetTriangleFillMode,
+    /* Phase 7E: 深度/模板状态 */
+    WMTRenderCmdSetDepthStencilState,
+    WMTRenderCmdSetStencilReference,
+    /* Phase 7G/7H: 绘制变体 */
+    WMTRenderCmdDrawIndexedPrimitives,
+    WMTRenderCmdDrawIndirectPrimitives,
+    WMTRenderCmdDrawIndexedIndirectPrimitives,
 };
 
 struct wmtcmd_render_setpso {
@@ -635,6 +805,73 @@ struct wmtcmd_render_draw {
     int primitive_type;     /* 0=Triangle（与现有 drawPrimitives 约定一致） */
     uint64_t vertex_start;
     uint64_t vertex_count;
+    uint64_t instance_count; /* Phase 7G: 0=非实例化(由 bridge 决定用普通 draw) */
+};
+
+struct wmtcmd_render_draw_indexed {
+    struct wmtcmd_base base;
+    int primitive_type;
+    uint64_t index_count;
+    int index_type;         /* 0=uint16, 1=uint32 */
+    mtl_handle_t index_buffer;
+    uint64_t index_buffer_offset;
+    uint64_t instance_count;
+};
+
+struct wmtcmd_render_draw_indirect {
+    struct wmtcmd_base base;
+    int primitive_type;
+    mtl_handle_t indirect_buffer;
+    uint64_t indirect_buffer_offset;
+};
+
+struct wmtcmd_render_draw_indexed_indirect {
+    struct wmtcmd_base base;
+    int primitive_type;
+    int index_type;
+    mtl_handle_t index_buffer;
+    mtl_handle_t indirect_buffer;
+    uint64_t indirect_buffer_offset;
+};
+
+/* Phase 7D: 光栅化状态命令 */
+struct wmtcmd_render_setcullmode {
+    struct wmtcmd_base base;
+    int cull_mode;          /* WMTCullMode */
+};
+
+struct wmtcmd_render_setfrontfacing {
+    struct wmtcmd_base base;
+    int winding;            /* WMTWinding */
+};
+
+struct wmtcmd_render_setdepthbias {
+    struct wmtcmd_base base;
+    float bias;
+    float slope_scale;
+    float clamp;
+};
+
+struct wmtcmd_render_setdepthclipmode {
+    struct wmtcmd_base base;
+    int clip_mode;          /* WMTDepthClipMode */
+};
+
+struct wmtcmd_render_settrianglefillmode {
+    struct wmtcmd_base base;
+    int fill_mode;          /* WMTTriangleFillMode */
+};
+
+/* Phase 7E: 深度/模板状态命令 */
+struct wmtcmd_render_setdepthstencilstate {
+    struct wmtcmd_base base;
+    mtl_handle_t state;
+};
+
+struct wmtcmd_render_setstencilreference {
+    struct wmtcmd_base base;
+    uint32_t front;
+    uint32_t back;
 };
 
 struct wmtcmd_render_endencoding {

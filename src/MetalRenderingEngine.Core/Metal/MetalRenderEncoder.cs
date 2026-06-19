@@ -30,6 +30,10 @@ public sealed class MetalRenderEncoder : MetalObject
     public void DrawPrimitives(int primitiveType, ulong vertexStart, ulong vertexCount)
         => MetalBridge.MTLRenderCommandEncoder_drawPrimitives(Handle, primitiveType, vertexStart, vertexCount);
 
+    /// <summary>Instanced 绘制图元（Phase 7G）。</summary>
+    public void DrawPrimitives(int primitiveType, ulong vertexStart, ulong vertexCount, ulong instanceCount)
+        => MetalBridge.MTLRenderCommandEncoder_drawPrimitivesInstanced(Handle, primitiveType, vertexStart, vertexCount, instanceCount);
+
     public void DrawTriangles(ulong vertexStart, ulong vertexCount)
         => DrawPrimitives(0, vertexStart, vertexCount);
 
@@ -39,6 +43,30 @@ public sealed class MetalRenderEncoder : MetalObject
         ArgumentNullException.ThrowIfNull(indexBuffer);
         MetalBridge.MTLRenderCommandEncoder_drawIndexedPrimitives(
             Handle, 0, indexCount, is32Bit ? 1 : 0, indexBuffer.Handle, indexBufferOffset);
+    }
+
+    /// <summary>使用 index buffer 绘制 instanced 三角形。</summary>
+    public void DrawIndexedTriangles(ulong indexCount, bool is32Bit, MetalBuffer indexBuffer, ulong indexBufferOffset, ulong instanceCount)
+    {
+        ArgumentNullException.ThrowIfNull(indexBuffer);
+        MetalBridge.MTLRenderCommandEncoder_drawIndexedPrimitivesInstanced(
+            Handle, 0, indexCount, is32Bit ? 1 : 0, indexBuffer.Handle, indexBufferOffset, instanceCount);
+    }
+
+    /// <summary>Indirect 绘制。</summary>
+    public void DrawPrimitivesIndirect(MetalBuffer indirectBuffer, ulong offset = 0)
+    {
+        ArgumentNullException.ThrowIfNull(indirectBuffer);
+        MetalBridge.MTLRenderCommandEncoder_drawPrimitivesIndirect(Handle, 0, indirectBuffer.Handle, offset);
+    }
+
+    /// <summary>Indexed indirect 绘制。</summary>
+    public void DrawIndexedTrianglesIndirect(MetalBuffer indexBuffer, MetalBuffer indirectBuffer, ulong offset = 0)
+    {
+        ArgumentNullException.ThrowIfNull(indexBuffer);
+        ArgumentNullException.ThrowIfNull(indirectBuffer);
+        MetalBridge.MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect(
+            Handle, 0, 1, indexBuffer.Handle, indirectBuffer.Handle, offset);
     }
 
     public void EndEncoding()
@@ -117,4 +145,43 @@ public sealed class MetalRenderEncoder : MetalObject
         ArgumentNullException.ThrowIfNull(fence);
         MetalBridge.MTLRenderCommandEncoder_updateFence(Handle, fence.Handle, (uint)afterStages);
     }
+
+    // ============================================================
+    // Phase 7D: 光栅化状态 setters
+    // ============================================================
+
+    /// <summary>设置背面剔除模式（None/Front/Back）。</summary>
+    public void SetCullMode(MTLCullMode mode)
+        => MetalBridge.MTLRenderCommandEncoder_setCullMode(Handle, (int)mode);
+
+    /// <summary>设置正面朝向绕序（顺时针/逆时针）。</summary>
+    public void SetFrontFacing(MTLWinding winding)
+        => MetalBridge.MTLRenderCommandEncoder_setFrontFacingWinding(Handle, (int)winding);
+
+    /// <summary>设置深度偏移（用于阴影贴图消除 acne）。</summary>
+    public void SetDepthBias(float bias, float slopeScale, float clamp)
+        => MetalBridge.MTLRenderCommandEncoder_setDepthBias(Handle, bias, slopeScale, clamp);
+
+    /// <summary>设置深度裁剪模式（Clip=超出 near/far 丢弃，Clamp=钳位）。</summary>
+    public void SetDepthClipMode(MTLDepthClipMode mode)
+        => MetalBridge.MTLRenderCommandEncoder_setDepthClipMode(Handle, (int)mode);
+
+    /// <summary>设置三角形填充模式（Fill/Lines 即线框）。</summary>
+    public void SetTriangleFillMode(MTLTriangleFillMode mode)
+        => MetalBridge.MTLRenderCommandEncoder_setTriangleFillMode(Handle, (int)mode);
+
+    // ============================================================
+    // Phase 7E: 深度/模板状态 setters
+    // ============================================================
+
+    /// <summary>绑定深度/模板状态对象。</summary>
+    public void SetDepthStencilState(MetalDepthStencilState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        MetalBridge.MTLRenderCommandEncoder_setDepthStencilState(Handle, state.Handle);
+    }
+
+    /// <summary>设置 stencil 参考值（前后分离）。</summary>
+    public void SetStencilReference(uint front, uint back)
+        => MetalBridge.MTLRenderCommandEncoder_setStencilReferenceValue(Handle, front, back);
 }

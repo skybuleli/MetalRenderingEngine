@@ -49,6 +49,13 @@ internal static partial class MetalBridge
     public static partial ulong MTLDevice_recommendedMaxWorkingSetSize(nuint device);
 
     // ============================================================
+    //  Phase 7A: MTLDepthStencilState
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newDepthStencilState")]
+    public static unsafe partial nuint MTLDevice_newDepthStencilState(nuint device, WMTDepthStencilDesc* desc);
+
+    // ============================================================
     //  MTLLibrary / MTLFunction
     // ============================================================
 
@@ -166,8 +173,20 @@ internal static partial class MetalBridge
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_drawPrimitives")]
     public static partial void MTLRenderCommandEncoder_drawPrimitives(nuint encoder, int primitive_type, ulong vertex_start, ulong vertex_count);
 
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_drawPrimitivesInstanced")]
+    public static partial void MTLRenderCommandEncoder_drawPrimitivesInstanced(nuint encoder, int primitive_type, ulong vertex_start, ulong vertex_count, ulong instance_count);
+
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_drawIndexedPrimitives")]
     public static partial void MTLRenderCommandEncoder_drawIndexedPrimitives(nuint encoder, int primitive_type, ulong index_count, int index_type, nuint index_buffer, ulong index_buffer_offset);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_drawIndexedPrimitivesInstanced")]
+    public static partial void MTLRenderCommandEncoder_drawIndexedPrimitivesInstanced(nuint encoder, int primitive_type, ulong index_count, int index_type, nuint index_buffer, ulong index_buffer_offset, ulong instance_count);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_drawPrimitivesIndirect")]
+    public static partial void MTLRenderCommandEncoder_drawPrimitivesIndirect(nuint encoder, int primitive_type, nuint indirect_buffer, ulong indirect_buffer_offset);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect")]
+    public static partial void MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect(nuint encoder, int primitive_type, int index_type, nuint index_buffer, nuint indirect_buffer, ulong indirect_buffer_offset);
 
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_endEncoding")]
     public static partial void MTLRenderCommandEncoder_endEncoding(nuint encoder);
@@ -276,6 +295,35 @@ internal static partial class MetalBridge
 
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_updateFence")]
     public static partial void MTLRenderCommandEncoder_updateFence(nuint encoder, nuint fence, uint after_stages);
+
+    // ============================================================
+    //  Phase 7D: 光栅化状态 setters
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setCullMode")]
+    public static partial void MTLRenderCommandEncoder_setCullMode(nuint encoder, int cull_mode);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setFrontFacingWinding")]
+    public static partial void MTLRenderCommandEncoder_setFrontFacingWinding(nuint encoder, int winding);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setDepthBias")]
+    public static partial void MTLRenderCommandEncoder_setDepthBias(nuint encoder, float bias, float slope_scale, float clamp);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setDepthClipMode")]
+    public static partial void MTLRenderCommandEncoder_setDepthClipMode(nuint encoder, int clip_mode);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setTriangleFillMode")]
+    public static partial void MTLRenderCommandEncoder_setTriangleFillMode(nuint encoder, int fill_mode);
+
+    // ============================================================
+    //  Phase 7E: 深度/模板状态 setters
+    // ============================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setDepthStencilState")]
+    public static partial void MTLRenderCommandEncoder_setDepthStencilState(nuint encoder, nuint state);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setStencilReferenceValue")]
+    public static partial void MTLRenderCommandEncoder_setStencilReferenceValue(nuint encoder, uint front, uint back);
 
     // ============================================================
     //  Phase 3.5: MTLRenderPassDescriptor (for Hexa.NET.ImGui Backends)

@@ -67,7 +67,7 @@ public sealed class TexturePool : IDisposable
         }
 
         master.Retain();
-        var leaseWrapper = new MetalTexture(master.Handle, master.Width, master.Height);
+        var leaseWrapper = new MetalTexture(master.Handle, master.Width, master.Height, master.PixelFormat);
         return new TextureLease(this, leaseWrapper, master, key);
     }
 

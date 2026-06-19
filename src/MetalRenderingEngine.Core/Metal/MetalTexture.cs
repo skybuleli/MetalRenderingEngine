@@ -13,12 +13,21 @@ public sealed class MetalTexture : MetalObject
     /// <summary>纹理高度（像素）。</summary>
     public uint Height { get; }
 
-    internal MetalTexture(nuint handle, uint width, uint height)
+    /// <summary>像素格式（<see cref="MTLPixelFormat"/>）。</summary>
+    public MTLPixelFormat PixelFormat { get; }
+
+    internal MetalTexture(nuint handle, uint width, uint height, MTLPixelFormat pixelFormat)
     {
         SetNativeHandle(handle);
         Width = width;
         Height = height;
+        PixelFormat = pixelFormat;
     }
+
+    /// <summary>是否为深度/模板格式（影响 bytesPerRow 计算与上传/回读用法）。</summary>
+    public bool IsDepthFormat =>
+        PixelFormat == MTLPixelFormat.Depth32Float ||
+        PixelFormat == MTLPixelFormat.Depth32Float_Stencil8;
 
     /// <summary>
     /// 上传像素数据到纹理的指定区域和 mip 级别。

@@ -50,6 +50,7 @@ public enum MTLPixelFormat : int
     BGRA8Unorm   = 80,
     RGBA32Float  = 125,
     Depth32Float = 252,
+    Depth32Float_Stencil8 = 260,  /* Phase 7C: packed depth+stencil (Apple Silicon 原生) */
 }
 
 /// <summary>
@@ -67,9 +68,10 @@ public enum MTLLoadAction : int
 /// </summary>
 public enum MTLStoreAction : int
 {
-    DontCare           = 0,
-    Store              = 1,
-    MultisampleResolve = 2,
+    DontCare                    = 0,
+    Store                       = 1,
+    MultisampleResolve          = 2,
+    StoreAndMultisampleResolve  = 3,  // Phase 7K: MSAA
 }
 
 // ============================================================
@@ -80,6 +82,7 @@ public enum MTLStoreAction : int
 public enum MTLTextureType : int
 {
     Type2D = 2,
+    Type2DMultisample = 5,  // Phase 7K: MSAA
 }
 
 /// <summary>MTLTextureUsage 位标志。</summary>
@@ -127,12 +130,82 @@ public enum MTLCompareFunction : int
     Always   = 7,
 }
 
+/// <summary>MTLStencilOperation（与 native/bridge.h 中 WMTStencilOperation 对齐）。</summary>
+public enum MTLStencilOperation : int
+{
+    Keep            = 0,
+    Zero            = 1,
+    Replace         = 2,
+    IncrementClamp  = 3,
+    DecrementClamp  = 4,
+    Invert          = 5,
+    IncrementWrap   = 6,
+    DecrementWrap   = 7,
+}
+
 /// <summary>MTLRenderStages 位标志。</summary>
 [Flags]
 public enum MTLRenderStages : uint
 {
     Vertex   = 1,
     Fragment = 2,
+}
+
+// ============================================================
+// Phase 7D: 光栅化状态枚举
+// ============================================================
+
+/// <summary>MTLCullMode（与 native/bridge.h 中 WMTCullMode 对齐）。</summary>
+public enum MTLCullMode : int
+{
+    None  = 0,
+    Front = 1,
+    Back  = 2,
+}
+
+/// <summary>MTLWinding（与 native/bridge.h 中 WMTWinding 对齐）。</summary>
+public enum MTLWinding : int
+{
+    Clockwise        = 0,
+    CounterClockwise = 1,
+}
+
+/// <summary>MTLDepthClipMode（与 native/bridge.h 中 WMTDepthClipMode 对齐）。</summary>
+public enum MTLDepthClipMode : int
+{
+    Clip  = 0,
+    Clamp = 1,
+}
+
+/// <summary>MTLTriangleFillMode（与 native/bridge.h 中 WMTTriangleFillMode 对齐）。</summary>
+public enum MTLTriangleFillMode : int
+{
+    Fill  = 0,
+    Lines = 1,
+}
+
+// ============================================================
+// Phase 7F: VertexDescriptor 枚举
+// ============================================================
+
+/// <summary>MTLVertexFormat 子集（与 native/bridge.h 中 WMTVertexFormat 对齐）。</summary>
+public enum MTLVertexFormat : int
+{
+    Invalid          = 0,
+    Float2           = 29,
+    Float3           = 30,
+    Float4           = 31,
+    UChar4           = 12,
+    UChar4Normalized = 13,
+    UInt             = 36,
+}
+
+/// <summary>MTLVertexStepFunction（与 native/bridge.h 中 WMTVertexStepFunction 对齐）。</summary>
+public enum MTLVertexStepFunction : int
+{
+    Constant    = 0,
+    PerVertex   = 1,
+    PerInstance = 2,
 }
 
 // ============================================================

@@ -46,7 +46,7 @@ public sealed class MetalDrawable : MetalObject
             if (h == 0)
                 throw new InvalidOperationException("CAMetalDrawable_texture returned null handle.");
             // ID2H（__bridge_retained）已返回 +1 引用的句柄，SafeHandle Dispose 时会 release，无需额外 retain
-            return new MetalTexture(h, 0, 0); // width/height 由 MetalTexture 内部从 native 获取
+            return new MetalTexture(h, 0, 0, MTLPixelFormat.Invalid); // width/height 由 MetalTexture 内部从 native 获取
         }
     }
 }
