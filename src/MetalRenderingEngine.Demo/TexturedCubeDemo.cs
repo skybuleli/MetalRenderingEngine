@@ -36,14 +36,10 @@ internal static class TexturedCubeDemo
         using var device = MetalDevice.CreateSystemDefault();
         Console.WriteLine($"[TexturedCube] Device: {device.Name}");
 
-        // ── 1. 着色器：预编译 metallib（MetalShaderLoader）+ 预编译反射（ReflectionLoader）─
-        // Phase 10D：反射从 shaders/<name>.reflect.json 加载，不经运行时 SlangCompiler 编译。
+        // ── 1. 着色器：预编译 metallib（MetalShaderLoader）─
+        // Phase 10D：反射由 ShaderBindingLayout 构造时从 reflect.json 加载（见下）。
         using var vertFn = MetalShaderLoader.GetFunction(device, "TexturedCube.vert", "main");
         using var fragFn = MetalShaderLoader.GetFunction(device, "TexturedCube.frag", "main");
-        var vertReflection = ReflectionLoader.Load("TexturedCube.vert");
-        var fragReflection = ReflectionLoader.Load("TexturedCube.frag");
-        Console.WriteLine($"  vert 反射：{vertReflection.ResourceCount} 资源");
-        Console.WriteLine($"  frag 反射：{fragReflection.ResourceCount} 资源");
 
         // ── 2. PSO + 深度状态 ─
         using var pso = new PipelineBuilder()
@@ -102,14 +98,15 @@ internal static class TexturedCubeDemo
         layer.SetPixelFormat(MTLPixelFormat.BGRA8Unorm);
         layer.SetDrawableSize(W, H);
 
-        // ── 8. ResourceTable（Phase 10C：按 slot 绑定，Apply 自动编码 + 绑定 + 声明驻留）─
-        // vert 反射：SRV slot=0（PerFrame StructuredBuffer）
-        var vertTable = new ResourceTable();
-        vertTable.BindBuffer(slot: 0, perFrameBuf, MscResourceType.Srv);
-        // frag 反射：SRV slot=0（texture）+ Sampler slot=0
-        var fragTable = new ResourceTable();
-        fragTable.BindTexture(slot: 0, cubeTex);
-        fragTable.BindSampler(slot: 0, sampler);
+        // ── 8. ShaderBindingLayout（Phase 10E：半自动绑定，强类型属性封装 slot）─
+        // 对比 Phase 10C 的 ResourceTable（手写 slot 数字），这里用语义属性名绑定：
+        // 调用方无需记 vert/frag 的 slot，且 shader 改 register 只改 BindingLayout 子类。
+        var layout = new TexturedCubeBindingLayout
+        {
+            PerFrame = perFrameBuf,      // vert SRV slot=0
+            ColorTex = cubeTex,          // frag SRV slot=0
+            LinearSampler = sampler,     // frag Sampler slot=0
+        };
 
         // ── 9. 渲染循环 ─
         var camera = new Camera(MathF.PI / 4f, (float)W / H, 0.1f, 100f);
@@ -146,11 +143,10 @@ internal static class TexturedCubeDemo
                 recorder.SetCullMode(MTLCullMode.Back);
                 recorder.SetFrontFacing(MTLWinding.CounterClockwise);
 
-                // Phase 10C/D：ResourceTable.Apply 自动编码描述符堆 + 绑定 buffer(2) + UseResource
-                // vert 路径：PerFrame SRV → SetVertexBytes(buffer(2)) + UseResource(perFrameBuf)
-                vertTable.Apply(recorder, vertReflection, ShaderStage.Vertex);
-                // frag 路径：texture SRV + Sampler → SetFragmentBytes(buffer(2)) + UseResource(cubeTex)
-                fragTable.Apply(recorder, fragReflection, ShaderStage.Fragment);
+                // Phase 10E：ShaderBindingLayout.Apply 一次性应用 vert+frag 绑定
+                // （内部调 ResourceTable.Apply → ArgumentBufferEncoder.Encode → SetVertexBytes/
+                // SetFragmentBytes(buffer(2)) + UseResource，反射由构造时 ReflectionLoader 加载）
+                layout.Apply(recorder);
 
                 recorder.Draw(0, 0, 36, 1);
                 recorder.EndRenderPass();
