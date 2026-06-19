@@ -52,15 +52,35 @@ internal static class GpuParticleDemo
     [StructLayout(LayoutKind.Sequential)]
     private struct PerFrameCB
     {
-        public Vector2 Viewport;   // 0-7
-        public float Time;         // 8-11
-        public float DeltaTime;    // 12-15
-        public Vector2 Gravity;    // 16-23
-        public Vector2 Wind;       // 24-31
-        public float EmitterX;     // 32-35
-        public float EmitterY;     // 36-39
-        public int ActiveCount;    // 40-43
-        public float Pad1, Pad2, Pad3; // 44-55
+        public Vector2 Viewport;       // 0-7
+        public float Time;             // 8-11
+        public float DeltaTime;        // 12-15
+        public Vector2 Gravity;        // 16-23
+        public Vector2 Wind;           // 24-31
+        public float EmitterX;         // 32-35
+        public float EmitterY;         // 36-39
+        public int ActiveCount;        // 40-43
+        public int ColorMode;          // 44-47: 0=default, 1=fire, 2=snow, 3=aurora, 4=fireworks
+        public float EmitterSpread;    // 48-51
+        public float SpeedMultiplier;  // 52-55
+    }
+
+    // 粒子预设
+    private enum ParticlePreset { Default, Fire, Snow, Aurora, Fireworks }
+
+    private static readonly string[] PresetNames = { "Default", "Fire ❗", "Snow ❄", "Aurora ✨", "Fireworks 🎆" };
+
+    private static void ApplyPreset(ParticlePreset preset, ref float gravityY, ref float windX,
+        ref float emitterSpread, ref float speedMul)
+    {
+        (gravityY, windX, emitterSpread, speedMul) = preset switch
+        {
+            ParticlePreset.Fire => (120f, 0f, 20f, 0.5f),       // 热空气上升（负重力方向）
+            ParticlePreset.Snow => (-30f, 20f, 400f, 0.3f),     // 缓慢飘落 + 风
+            ParticlePreset.Aurora => (0f, 0f, 500f, 0.8f),      // 无重力，宽幅波浪
+            ParticlePreset.Fireworks => (-100f, 0f, 5f, 1.5f),  // 爆射 + 重力
+            _ => (80f, 0f, 100f, 1f),
+        };
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -102,7 +122,9 @@ struct PerFrame {
     float emitterX;
     float emitterY;
     int activeCount;
-    float pad1, pad2, pad3;
+    int colorMode;
+    float emitterSpread;
+    float speedMul;
 };
 
 RWStructuredBuffer<Particle> particles;
@@ -111,6 +133,21 @@ StructuredBuffer<PerFrame> perFrame;
 float hash(uint n) {
     n = (n << 13) ^ n;
     return 1.0 - float((n * (n * n * 15731u + 789221u) + 1376312589u) & 0x7fffffffu) / 1073741824.0;
+}
+
+float3 hsvToRgb(float h, float s, float v) {
+    float c = v * s;
+    float x = c * (1.0 - abs(fmod(h * 6.0, 2.0) - 1.0));
+    float m = v - c;
+    float3 rgb;
+    float hh = h * 6.0;
+    if (hh < 1.0) rgb = float3(c, x, 0);
+    else if (hh < 2.0) rgb = float3(x, c, 0);
+    else if (hh < 3.0) rgb = float3(0, c, x);
+    else if (hh < 4.0) rgb = float3(0, x, c);
+    else if (hh < 5.0) rgb = float3(x, 0, c);
+    else rgb = float3(c, 0, x);
+    return rgb + m;
 }
 
 [numthreads(64, 1, 1)]
@@ -128,24 +165,59 @@ void main(uint3 tid : SV_DispatchThreadID) {
     p.life -= dt;
 
     if (p.life <= 0) {
-        float angle = hash(idx * 73u + uint(perFrame[0].time * 1000.0)) * 6.28318;
-        float speed = 40.0 + hash(idx * 137u) * 120.0;
-        p.position = float2(perFrame[0].emitterX, perFrame[0].emitterY);
+        float t = perFrame[0].time;
+        float angle = hash(idx * 73u + uint(t * 1000.0)) * 6.28318;
+        float speed = (40.0 + hash(idx * 137u) * 120.0) * perFrame[0].speedMul;
+        float spread = perFrame[0].emitterSpread;
+        p.position = float2(
+            perFrame[0].emitterX + hash(idx * 53u) * spread - spread * 0.5,
+            perFrame[0].emitterY + hash(idx * 97u) * spread * 0.3 - spread * 0.15);
         p.velocity = float2(cos(angle), sin(angle)) * speed;
-        p.velocity.y -= 40.0;
+        // 默认模式向上偏
+        if (perFrame[0].colorMode == 0) p.velocity.y -= 40.0;
+        // 火焰模式强制向上
+        if (perFrame[0].colorMode == 1) p.velocity.y -= 60.0;
+        // 烟花模式爆射
+        if (perFrame[0].colorMode == 4) p.velocity.y -= 80.0;
         p.life = p.maxLife;
-        float h = hash(idx * 311u + uint(perFrame[0].time * 100.0));
-        p.color = float4(0.4 + h * 0.6, 0.2 + abs(h) * 0.5, 0.7 + h * 0.3, 1.0);
+        float h = hash(idx * 311u + uint(t * 100.0));
+        // 重生时用预设基础色
+        if (perFrame[0].colorMode == 1) // 火焰
+            p.color = float4(0.8 + h * 0.2, 0.3 + h * 0.5, 0.05, 1.0);
+        else if (perFrame[0].colorMode == 2) // 雪花
+            p.color = float4(0.7 + h * 0.3, 0.8 + h * 0.2, 0.95 + h * 0.05, 0.8);
+        else if (perFrame[0].colorMode == 3) // 极光
+            p.color = float4(0.1, 0.6 + h * 0.4, 0.4 + h * 0.6, 0.7);
+        else if (perFrame[0].colorMode == 4) // 烟花
+            p.color = float4(hsvToRgb(hash(idx * 499u), 0.9, 1.0), 1.0);
+        else // 默认
+            p.color = float4(0.4 + h * 0.6, 0.2 + abs(h) * 0.5, 0.7 + h * 0.3, 1.0);
     }
 
     float2 vp = perFrame[0].viewport;
     if (p.position.x < 0 || p.position.x > vp.x) { p.velocity.x *= -0.6; p.position.x = clamp(p.position.x, 0, vp.x); }
     if (p.position.y > vp.y) { p.velocity.y *= -0.5; p.position.y = vp.y; }
+    if (p.position.y < 0 && perFrame[0].colorMode != 2) { p.velocity.y *= -0.3; p.position.y = 0; }
 
+    float lifeRatio = clamp(p.life / p.maxLife, 0.0, 1.0);
     float speed2 = length(p.velocity);
-    p.color.r = clamp(speed2 / 200.0, 0.1, 1.0);
-    p.color.g = clamp(p.life / p.maxLife, 0.0, 1.0) * 0.6;
-    p.color.a = clamp(p.life / p.maxLife, 0.05, 1.0);
+    p.color.a = clamp(lifeRatio, 0.05, 1.0);
+
+    // 颜色渐变
+    if (perFrame[0].colorMode == 1) { // 火焰：红→橙→黄→透明
+        p.color.rgb = float3(1.0, 0.2 + lifeRatio * 0.8, lifeRatio * lifeRatio * 0.3) * (0.5 + speed2 * 0.005);
+    } else if (perFrame[0].colorMode == 2) { // 雪花：白蓝微光
+        float twinkle = 0.7 + 0.3 * sin(p.position.x * 0.1 + perFrame[0].time * 3.0);
+        p.color.rgb = float3(0.7, 0.85, 1.0) * twinkle;
+    } else if (perFrame[0].colorMode == 3) { // 极光：绿/青/紫波动
+        float wave = sin(p.position.x * 0.01 + perFrame[0].time * 0.5) * 0.5 + 0.5;
+        p.color.rgb = lerp(float3(0.1, 0.8, 0.5), float3(0.6, 0.2, 0.9), wave) * (0.6 + speed2 * 0.003);
+    } else if (perFrame[0].colorMode == 4) { // 烟花：亮→暗
+        p.color.rgb *= (0.3 + lifeRatio * 0.7);
+    } else { // 默认
+        p.color.r = clamp(speed2 / 200.0, 0.1, 1.0);
+        p.color.g = lifeRatio * 0.6;
+    }
 
     particles[idx] = p;
 }
@@ -174,7 +246,9 @@ struct PerFrame {
     float emitterX;
     float emitterY;
     int activeCount;
-    float pad1, pad2, pad3;
+    int colorMode;
+    float emitterSpread;
+    float speedMul;
 };
 
 struct VSOut {
@@ -354,6 +428,13 @@ float4 frag_main(VSOut input) : SV_Target0
         float gravityY = 80f;
         float windX = 0f;
         bool paused = false;
+        int presetIndex = 0;
+        float emitterSpread = 100f;
+        float speedMul = 1f;
+
+        // 帧时间平滑（环形缓冲）
+        float[] frameTimes = new float[60];
+        int ftIdx = 0;
 
         using var queue = device.NewCommandQueue();
         var stopwatch2 = Stopwatch.StartNew();
@@ -395,16 +476,51 @@ float4 frag_main(VSOut input) : SV_Target0
                 ImGuiImplMetal.NewFrame((MTLRenderPassDescriptor*)rpDesc.Handle);
                 ImGui.NewFrame();
 
-                ImGui.SetNextWindowSize(new Vector2(320, 240), ImGuiCond.FirstUseEver);
+                ImGui.SetNextWindowSize(new Vector2(340, 340), ImGuiCond.FirstUseEver);
                 ImGui.SetNextWindowPos(new Vector2(10, 10), ImGuiCond.FirstUseEver);
-                ImGui.Begin("GPU Particles");
-                ImGui.TextColored(new Vector4(0.3f, 1f, 0.3f, 1f), $"FPS: {fps:F1}  |  Frame: {frame}");
-                ImGui.Text($"Frame: {frameMs:F2}ms");
+                ImGui.Begin("GPU Particles — Phase 9");
+                ImGui.TextColored(new Vector4(0.3f, 1f, 0.3f, 1f), $"FPS: {fps:F1}  |  {frameMs:F1}ms  |  {activeCount} particles");
+
+                // 平均帧时间
+                float avgMs = 0;
+                int ftCount = Math.Min(frame, frameTimes.Length);
+                for (int i = 0; i < ftCount; i++) avgMs += frameTimes[i];
+                avgMs = ftCount > 0 ? avgMs / ftCount : frameMs;
+                ImGui.Text($"Avg: {avgMs:F1}ms");
+
                 ImGui.Separator();
+
+                // 预设选择器
+                if (ImGui.Combo("Preset", ref presetIndex, PresetNames, PresetNames.Length))
+                {
+                    var preset = (ParticlePreset)presetIndex;
+                    ApplyPreset(preset, ref gravityY, ref windX, ref emitterSpread, ref speedMul);
+                }
+
                 ImGui.SliderInt("Particles", ref activeCount, 100, MaxParticles);
                 ImGui.SliderFloat("Gravity", ref gravityY, -200f, 200f);
                 ImGui.SliderFloat("Wind", ref windX, -100f, 100f);
+                ImGui.SliderFloat("Spread", ref emitterSpread, 0f, 500f);
+                ImGui.SliderFloat("Speed", ref speedMul, 0.1f, 3f);
                 ImGui.Checkbox("Paused", ref paused);
+
+                if (ImGui.Button("Reset Particles"))
+                {
+                    for (int i = 0; i < MaxParticles; i++)
+                    {
+                        float a = (float)(rng.NextDouble() * Math.PI * 2);
+                        float sp = 50f + (float)rng.NextDouble() * 150f * speedMul;
+                        particles[i] = new Particle
+                        {
+                            Position = new Vector2(W / 2f, H * 0.65f),
+                            Velocity = new Vector2(MathF.Cos(a) * sp, MathF.Sin(a) * sp - 60f),
+                            Color = new Vector4(0.5f, 0.5f, 0.5f, 1f),
+                            Life = 0.01f, MaxLife = 2f + (float)rng.NextDouble() * 4f,
+                            Size = 6f + (float)rng.NextDouble() * 12f,
+                        };
+                    }
+                }
+
                 ImGui.End();
                 ImGui.Render();
 
@@ -418,9 +534,12 @@ float4 frag_main(VSOut input) : SV_Target0
                         DeltaTime = dt,
                         Gravity = new Vector2(0, gravityY),
                         Wind = new Vector2(windX, 0),
-                        EmitterX = W / 2f + MathF.Sin(time * 0.5f) * 100f,
-                        EmitterY = H * 0.65f,
+                        EmitterX = W / 2f + MathF.Sin(time * 0.5f) * emitterSpread * 0.5f,
+                        EmitterY = presetIndex == (int)ParticlePreset.Snow ? 0f : H * 0.65f,
                         ActiveCount = activeCount,
+                        ColorMode = presetIndex,
+                        EmitterSpread = emitterSpread,
+                        SpeedMultiplier = speedMul,
                     };
                 }
 
@@ -430,18 +549,17 @@ float4 frag_main(VSOut input) : SV_Target0
                 if (!paused)
                 {
                     int groups = (activeCount + ThreadsPerGroup - 1) / ThreadsPerGroup;
-                    var computeArgBuf = new UavDescriptor[2]
-                    {
-                        new UavDescriptor { GpuAddress = perFrameBuffer.GpuAddress, Length = perFrameBuffer.Length, Stride = (ulong)perFrameSize },
-                        new UavDescriptor { GpuAddress = particleBuffer.GpuAddress, Length = particleBuffer.Length, Stride = (ulong)particleSize },
-                    };
                     using var computeEnc = cmdbuf.ComputeCommandEncoder();
                     computeEnc.SetComputePipelineState(computePso);
                     computeEnc.UseResource(particleBuffer, MTLResourceUsage.Read | MTLResourceUsage.Write);
                     computeEnc.UseResource(perFrameBuffer, MTLResourceUsage.Read);
-                    fixed (UavDescriptor* p = computeArgBuf)
-                        MetalBridge.MTLComputeCommandEncoder_setBytes(
-                            computeEnc.Handle, p, (ulong)(computeArgBuf.Length * 24), ArgIndex);
+                    // 使用 SetBytes<T> 重载（struct 方式，避免 stackalloc）
+                    var computeArg = new VertArgBuffer
+                    {
+                        Srv0 = new UavDescriptor { GpuAddress = perFrameBuffer.GpuAddress, Length = perFrameBuffer.Length, Stride = (ulong)perFrameSize },
+                        Srv1 = new UavDescriptor { GpuAddress = particleBuffer.GpuAddress, Length = particleBuffer.Length, Stride = (ulong)particleSize },
+                    };
+                    computeEnc.SetBytes(in computeArg, ArgIndex);
                     computeEnc.DispatchThreadgroups(
                         new WMTSize((ulong)groups, 1, 1),
                         new WMTSize(ThreadsPerGroup, 1, 1));
@@ -491,6 +609,7 @@ float4 frag_main(VSOut input) : SV_Target0
 
             frame++;
             fpsCounter++;
+            frameTimes[ftIdx++ % frameTimes.Length] = dt * 1000f;
             long nowMs = stopwatch2.ElapsedMilliseconds;
             if (nowMs - lastFpsTime >= 500)
             {

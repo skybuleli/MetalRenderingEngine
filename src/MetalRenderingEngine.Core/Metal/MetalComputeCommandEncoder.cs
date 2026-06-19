@@ -36,6 +36,13 @@ public sealed class MetalComputeCommandEncoder : MetalObject
         }
     }
 
+    /// <summary>把任意字节数据原地传到 buffer(index)；适合 argument buffer 描述符数组等场景。</summary>
+    public unsafe void SetBytes(ReadOnlySpan<byte> data, ulong index)
+    {
+        fixed (byte* p = data)
+            MetalBridge.MTLComputeCommandEncoder_setBytes(Handle, p, (ulong)data.Length, index);
+    }
+
     /// <summary>把纹理绑到 texture(index)。</summary>
     public void SetTexture(MetalTexture texture, ulong index)
     {
