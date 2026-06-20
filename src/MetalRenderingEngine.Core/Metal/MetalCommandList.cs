@@ -238,6 +238,7 @@ public sealed unsafe class MetalCommandList : IDisposable
         p->IndexCount = indexCount;
         p->IndexType = is32Bit ? 1 : 0;
         p->IndexBuffer = indexBuffer.Handle;
+        p->IndexBufferLength = indexBuffer.Length;
         p->IndexBufferOffset = indexBufferOffset;
         p->InstanceCount = instanceCount;
         LinkCommand(&p->Base);
@@ -265,6 +266,7 @@ public sealed unsafe class MetalCommandList : IDisposable
         p->PrimitiveType = 0;
         p->IndexType = 1; /* uint32 */
         p->IndexBuffer = indexBuffer.Handle;
+        p->IndexBufferLength = indexBuffer.Length;
         p->IndirectBuffer = indirectBuffer.Handle;
         p->IndirectBufferOffset = offset;
         LinkCommand(&p->Base);
@@ -351,7 +353,40 @@ public sealed unsafe class MetalCommandList : IDisposable
     {
         if (_head == null) return;
         ComputeReplayCallCount++;
-        MetalBridge.MTLComputeCommandEncoder_encodeCommands(encoder.Handle, _head);
+        for (WMTCommandBase* cmd = _head; cmd != null; cmd = cmd->Next)
+        {
+            switch ((WMTComputeCmdType)cmd->Type)
+            {
+                case WMTComputeCmdType.EndEncoding:
+                    encoder.EndEncoding();
+                    break;
+                case WMTComputeCmdType.SetPipelineState:
+                {
+                    var p = (WMTComputeSetPso*)cmd;
+                    using var pso = new MetalComputePipelineState(p->Pso);
+                    pso.Retain();
+                    encoder.SetComputePipelineState(pso);
+                    break;
+                }
+                case WMTComputeCmdType.UseResource:
+                {
+                    // Metal 4 以 residency set 取代旧的 useResource 语义，这里保留命令但不再下发旧 selector。
+                    break;
+                }
+                case WMTComputeCmdType.SetBytes:
+                {
+                    var p = (WMTComputeSetBytes*)cmd;
+                    encoder.SetBytes(new ReadOnlySpan<byte>(p->Bytes, checked((int)p->Length)), p->Index);
+                    break;
+                }
+                case WMTComputeCmdType.Dispatch:
+                {
+                    var p = (WMTComputeDispatch*)cmd;
+                    encoder.DispatchThreadgroups(p->ThreadgroupsPerGrid, p->ThreadsPerThreadgroup);
+                    break;
+                }
+            }
+        }
         Clear();
     }
 
@@ -360,7 +395,119 @@ public sealed unsafe class MetalCommandList : IDisposable
     {
         if (_head == null) return;
         RenderReplayCallCount++;
-        MetalBridge.MTLRenderCommandEncoder_encodeCommands(encoder.Handle, _head);
+        for (WMTCommandBase* cmd = _head; cmd != null; cmd = cmd->Next)
+        {
+            switch ((WMTRenderCmdType)cmd->Type)
+            {
+                case WMTRenderCmdType.EndEncoding:
+                    encoder.EndEncoding();
+                    break;
+                case WMTRenderCmdType.SetPipelineState:
+                {
+                    var p = (WMTRenderSetPso*)cmd;
+                    using var pso = new MetalRenderPipelineState(p->Pso);
+                    pso.Retain();
+                    encoder.SetRenderPipelineState(pso);
+                    break;
+                }
+                case WMTRenderCmdType.SetViewport:
+                {
+                    var p = (WMTRenderSetViewport*)cmd;
+                    encoder.SetViewport(p->X, p->Y, p->W, p->H, p->Znear, p->Zfar);
+                    break;
+                }
+                case WMTRenderCmdType.SetVertexBytes:
+                {
+                    var p = (WMTRenderSetBytes*)cmd;
+                    encoder.SetVertexBytes(new ReadOnlySpan<byte>(p->Bytes, checked((int)p->Length)), p->Index);
+                    break;
+                }
+                case WMTRenderCmdType.SetFragmentBytes:
+                {
+                    var p = (WMTRenderSetBytes*)cmd;
+                    encoder.SetFragmentBytes(new ReadOnlySpan<byte>(p->Bytes, checked((int)p->Length)), p->Index);
+                    break;
+                }
+                case WMTRenderCmdType.UseResource:
+                    break;
+                case WMTRenderCmdType.DrawPrimitives:
+                {
+                    var p = (WMTRenderDraw*)cmd;
+                    encoder.DrawPrimitives(p->PrimitiveType, p->VertexStart, p->VertexCount, p->InstanceCount);
+                    break;
+                }
+                case WMTRenderCmdType.SetCullMode:
+                {
+                    var p = (WMTRenderSetCullMode*)cmd;
+                    encoder.SetCullMode((MTLCullMode)p->CullMode);
+                    break;
+                }
+                case WMTRenderCmdType.SetFrontFacing:
+                {
+                    var p = (WMTRenderSetFrontFacing*)cmd;
+                    encoder.SetFrontFacing((MTLWinding)p->Winding);
+                    break;
+                }
+                case WMTRenderCmdType.SetDepthBias:
+                {
+                    var p = (WMTRenderSetDepthBias*)cmd;
+                    encoder.SetDepthBias(p->Bias, p->SlopeScale, p->Clamp);
+                    break;
+                }
+                case WMTRenderCmdType.SetDepthClipMode:
+                {
+                    var p = (WMTRenderSetDepthClipMode*)cmd;
+                    encoder.SetDepthClipMode((MTLDepthClipMode)p->ClipMode);
+                    break;
+                }
+                case WMTRenderCmdType.SetTriangleFillMode:
+                {
+                    var p = (WMTRenderSetTriangleFillMode*)cmd;
+                    encoder.SetTriangleFillMode((MTLTriangleFillMode)p->FillMode);
+                    break;
+                }
+                case WMTRenderCmdType.SetDepthStencilState:
+                {
+                    var p = (WMTRenderSetDepthStencilState*)cmd;
+                    using var state = new MetalDepthStencilState(p->State);
+                    state.Retain();
+                    encoder.SetDepthStencilState(state);
+                    break;
+                }
+                case WMTRenderCmdType.SetStencilReference:
+                {
+                    var p = (WMTRenderSetStencilReference*)cmd;
+                    encoder.SetStencilReference(p->Front, p->Back);
+                    break;
+                }
+                case WMTRenderCmdType.DrawIndexedPrimitives:
+                {
+                    var p = (WMTRenderDrawIndexed*)cmd;
+                    using var indexBuffer = new MetalBuffer(p->IndexBuffer, p->IndexBufferLength);
+                    indexBuffer.Retain();
+                    encoder.DrawIndexedTriangles(p->IndexCount, p->IndexType == 1, indexBuffer, p->IndexBufferOffset, p->InstanceCount);
+                    break;
+                }
+                case WMTRenderCmdType.DrawIndirectPrimitives:
+                {
+                    var p = (WMTRenderDrawIndirect*)cmd;
+                    using var indirectBuffer = new MetalBuffer(p->IndirectBuffer, 0UL);
+                    indirectBuffer.Retain();
+                    encoder.DrawPrimitivesIndirect(indirectBuffer, p->IndirectBufferOffset);
+                    break;
+                }
+                case WMTRenderCmdType.DrawIndexedIndirectPrimitives:
+                {
+                    var p = (WMTRenderDrawIndexedIndirect*)cmd;
+                    using var indexBuffer = new MetalBuffer(p->IndexBuffer, p->IndexBufferLength);
+                    using var indirectBuffer = new MetalBuffer(p->IndirectBuffer, 0UL);
+                    indexBuffer.Retain();
+                    indirectBuffer.Retain();
+                    encoder.DrawIndexedTrianglesIndirect(indexBuffer, indirectBuffer, p->IndirectBufferOffset);
+                    break;
+                }
+            }
+        }
         Clear();
     }
 

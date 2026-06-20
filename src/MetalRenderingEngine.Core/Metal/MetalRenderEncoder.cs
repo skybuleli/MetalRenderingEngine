@@ -3,11 +3,21 @@ using MetalRenderingEngine.Metal.Interop;
 namespace MetalRenderingEngine.Metal;
 
 /// <summary>
-/// MTLRenderCommandEncoder 封装。
+/// MTL4RenderCommandEncoder 封装。
+/// 资源绑定走 argument table，不再使用 per-encoder setVertexBuffer / setFragmentBuffer / set*Bytes。
 /// </summary>
 public sealed class MetalRenderEncoder : MetalObject
 {
-    internal MetalRenderEncoder(nuint handle) { SetNativeHandle(handle); }
+    private readonly MetalCommandBuffer _commandBuffer;
+
+    internal MetalRenderEncoder(nuint handle, MetalCommandBuffer commandBuffer)
+    {
+        ArgumentNullException.ThrowIfNull(commandBuffer);
+        _commandBuffer = commandBuffer;
+        SetNativeHandle(handle);
+        MetalBridge.MTLRenderCommandEncoder_setArgumentTable(Handle, commandBuffer.VertexArgumentTableHandle, 1);
+        MetalBridge.MTLRenderCommandEncoder_setArgumentTable(Handle, commandBuffer.FragmentArgumentTableHandle, 2);
+    }
 
     public void SetRenderPipelineState(MetalRenderPipelineState pso)
     {
@@ -18,7 +28,8 @@ public sealed class MetalRenderEncoder : MetalObject
     public void SetVertexBuffer(MetalBuffer buffer, ulong offset, ulong index)
     {
         ArgumentNullException.ThrowIfNull(buffer);
-        MetalBridge.MTLRenderCommandEncoder_setVertexBuffer(Handle, buffer.Handle, offset, index);
+        _commandBuffer.TrackResidency(buffer);
+        MetalBridge.MTLArgumentTable_setAddress(_commandBuffer.VertexArgumentTableHandle, buffer.GpuAddress + offset, index);
     }
 
     public void SetViewport(float x, float y, float w, float h, float znear = 0, float zfar = 1)
@@ -41,23 +52,30 @@ public sealed class MetalRenderEncoder : MetalObject
     public void DrawIndexedTriangles(ulong indexCount, bool is32Bit, MetalBuffer indexBuffer, ulong indexBufferOffset = 0)
     {
         ArgumentNullException.ThrowIfNull(indexBuffer);
+        _commandBuffer.TrackResidency(indexBuffer);
+        ulong indexAddress = indexBuffer.GpuAddress + indexBufferOffset;
+        ulong indexLength = indexBuffer.Length - indexBufferOffset;
         MetalBridge.MTLRenderCommandEncoder_drawIndexedPrimitives(
-            Handle, 0, indexCount, is32Bit ? 1 : 0, indexBuffer.Handle, indexBufferOffset);
+            Handle, 0, indexCount, is32Bit ? 1 : 0, indexAddress, indexLength);
     }
 
     /// <summary>使用 index buffer 绘制 instanced 三角形。</summary>
     public void DrawIndexedTriangles(ulong indexCount, bool is32Bit, MetalBuffer indexBuffer, ulong indexBufferOffset, ulong instanceCount)
     {
         ArgumentNullException.ThrowIfNull(indexBuffer);
+        _commandBuffer.TrackResidency(indexBuffer);
+        ulong indexAddress = indexBuffer.GpuAddress + indexBufferOffset;
+        ulong indexLength = indexBuffer.Length - indexBufferOffset;
         MetalBridge.MTLRenderCommandEncoder_drawIndexedPrimitivesInstanced(
-            Handle, 0, indexCount, is32Bit ? 1 : 0, indexBuffer.Handle, indexBufferOffset, instanceCount);
+            Handle, 0, indexCount, is32Bit ? 1 : 0, indexAddress, indexLength, instanceCount);
     }
 
     /// <summary>Indirect 绘制。</summary>
     public void DrawPrimitivesIndirect(MetalBuffer indirectBuffer, ulong offset = 0)
     {
         ArgumentNullException.ThrowIfNull(indirectBuffer);
-        MetalBridge.MTLRenderCommandEncoder_drawPrimitivesIndirect(Handle, 0, indirectBuffer.Handle, offset);
+        _commandBuffer.TrackResidency(indirectBuffer);
+        MetalBridge.MTLRenderCommandEncoder_drawPrimitivesIndirect(Handle, 0, indirectBuffer.GpuAddress + offset);
     }
 
     /// <summary>Indexed indirect 绘制。</summary>
@@ -65,8 +83,10 @@ public sealed class MetalRenderEncoder : MetalObject
     {
         ArgumentNullException.ThrowIfNull(indexBuffer);
         ArgumentNullException.ThrowIfNull(indirectBuffer);
+        _commandBuffer.TrackResidency(indexBuffer);
+        _commandBuffer.TrackResidency(indirectBuffer);
         MetalBridge.MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect(
-            Handle, 0, 1, indexBuffer.Handle, indirectBuffer.Handle, offset);
+            Handle, 0, 1, indexBuffer.GpuAddress, indexBuffer.Length, indirectBuffer.GpuAddress + offset);
     }
 
     public void EndEncoding()
@@ -76,70 +96,68 @@ public sealed class MetalRenderEncoder : MetalObject
     // Phase 3 扩展
     // ============================================================
 
-    /// <summary>内联字节数据到 vertex buffer slot（常用于 push constants）。</summary>
     public unsafe void SetVertexBytes(ReadOnlySpan<byte> data, ulong index)
     {
-        fixed (byte* p = data)
-            MetalBridge.MTLRenderCommandEncoder_setVertexBytes(Handle, p, (ulong)data.Length, index);
+        ulong address = _commandBuffer.AllocateScratch(data);
+        MetalBridge.MTLArgumentTable_setAddress(_commandBuffer.VertexArgumentTableHandle, address, index);
     }
 
-    /// <summary>内联结构体到 vertex buffer slot。</summary>
     public unsafe void SetVertexBytes<T>(in T value, ulong index) where T : unmanaged
     {
         T local = value;
-        MetalBridge.MTLRenderCommandEncoder_setVertexBytes(Handle, &local, (ulong)sizeof(T), index);
+        ReadOnlySpan<byte> bytes = new ReadOnlySpan<byte>((byte*)&local, sizeof(T));
+        ulong address = _commandBuffer.AllocateScratch(bytes);
+        MetalBridge.MTLArgumentTable_setAddress(_commandBuffer.VertexArgumentTableHandle, address, index);
     }
 
-    /// <summary>绑定 fragment buffer。</summary>
     public void SetFragmentBuffer(MetalBuffer buffer, ulong offset, ulong index)
     {
         ArgumentNullException.ThrowIfNull(buffer);
-        MetalBridge.MTLRenderCommandEncoder_setFragmentBuffer(Handle, buffer.Handle, offset, index);
+        _commandBuffer.TrackResidency(buffer);
+        MetalBridge.MTLArgumentTable_setAddress(_commandBuffer.FragmentArgumentTableHandle, buffer.GpuAddress + offset, index);
     }
 
-    /// <summary>内联字节数据到 fragment buffer slot。</summary>
-    public unsafe void SetFragmentBytes(ReadOnlySpan<byte> data, ulong index)
+    public void SetFragmentBytes(ReadOnlySpan<byte> data, ulong index)
     {
-        fixed (byte* p = data)
-            MetalBridge.MTLRenderCommandEncoder_setFragmentBytes(Handle, p, (ulong)data.Length, index);
+        ulong address = _commandBuffer.AllocateScratch(data);
+        MetalBridge.MTLArgumentTable_setAddress(_commandBuffer.FragmentArgumentTableHandle, address, index);
     }
 
-    /// <summary>内联结构体到 fragment buffer slot。</summary>
     public unsafe void SetFragmentBytes<T>(in T value, ulong index) where T : unmanaged
     {
         T local = value;
-        MetalBridge.MTLRenderCommandEncoder_setFragmentBytes(Handle, &local, (ulong)sizeof(T), index);
+        ReadOnlySpan<byte> bytes = new ReadOnlySpan<byte>((byte*)&local, sizeof(T));
+        ulong address = _commandBuffer.AllocateScratch(bytes);
+        MetalBridge.MTLArgumentTable_setAddress(_commandBuffer.FragmentArgumentTableHandle, address, index);
     }
 
-    /// <summary>绑定 fragment texture。</summary>
     public void SetFragmentTexture(MetalTexture texture, ulong index)
     {
         ArgumentNullException.ThrowIfNull(texture);
-        MetalBridge.MTLRenderCommandEncoder_setFragmentTexture(Handle, texture.Handle, index);
+        _commandBuffer.TrackResidency(texture);
+        MetalBridge.MTLArgumentTable_setTexture(_commandBuffer.FragmentArgumentTableHandle, texture.GpuResourceID, index);
     }
 
-    /// <summary>绑定 fragment sampler。</summary>
     public void SetFragmentSamplerState(MetalSamplerState sampler, ulong index)
     {
         ArgumentNullException.ThrowIfNull(sampler);
-        MetalBridge.MTLRenderCommandEncoder_setFragmentSamplerState(Handle, sampler.Handle, index);
+        _commandBuffer.TrackResidency(sampler);
+        MetalBridge.MTLArgumentTable_setSamplerState(_commandBuffer.FragmentArgumentTableHandle, sampler.GpuResourceID, index);
     }
 
-    /// <summary>声明资源驻留（render encoder 版本，包含 stage 参数）。</summary>
+    /// <summary>声明资源驻留（Metal 4 走 residency set）。</summary>
     public void UseResource(MetalObject resource, MTLResourceUsage usage, MTLRenderStages stages = MTLRenderStages.Vertex | MTLRenderStages.Fragment)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        MetalBridge.MTLRenderCommandEncoder_useResource(Handle, resource.Handle, (uint)usage, (uint)stages);
+        _commandBuffer.TrackResidency(resource);
     }
 
-    /// <summary>等待 Fence（GPU 执行到此处前必须完成指定 stage）。</summary>
     public void WaitForFence(MetalFence fence, MTLRenderStages beforeStages)
     {
         ArgumentNullException.ThrowIfNull(fence);
         MetalBridge.MTLRenderCommandEncoder_waitForFence(Handle, fence.Handle, (uint)beforeStages);
     }
 
-    /// <summary>更新 Fence（GPU 完成指定 stage 后标记）。</summary>
     public void UpdateFence(MetalFence fence, MTLRenderStages afterStages)
     {
         ArgumentNullException.ThrowIfNull(fence);
@@ -150,23 +168,18 @@ public sealed class MetalRenderEncoder : MetalObject
     // Phase 7D: 光栅化状态 setters
     // ============================================================
 
-    /// <summary>设置背面剔除模式（None/Front/Back）。</summary>
     public void SetCullMode(MTLCullMode mode)
         => MetalBridge.MTLRenderCommandEncoder_setCullMode(Handle, (int)mode);
 
-    /// <summary>设置正面朝向绕序（顺时针/逆时针）。</summary>
     public void SetFrontFacing(MTLWinding winding)
         => MetalBridge.MTLRenderCommandEncoder_setFrontFacingWinding(Handle, (int)winding);
 
-    /// <summary>设置深度偏移（用于阴影贴图消除 acne）。</summary>
     public void SetDepthBias(float bias, float slopeScale, float clamp)
         => MetalBridge.MTLRenderCommandEncoder_setDepthBias(Handle, bias, slopeScale, clamp);
 
-    /// <summary>设置深度裁剪模式（Clip=超出 near/far 丢弃，Clamp=钳位）。</summary>
     public void SetDepthClipMode(MTLDepthClipMode mode)
         => MetalBridge.MTLRenderCommandEncoder_setDepthClipMode(Handle, (int)mode);
 
-    /// <summary>设置三角形填充模式（Fill/Lines 即线框）。</summary>
     public void SetTriangleFillMode(MTLTriangleFillMode mode)
         => MetalBridge.MTLRenderCommandEncoder_setTriangleFillMode(Handle, (int)mode);
 
@@ -174,14 +187,12 @@ public sealed class MetalRenderEncoder : MetalObject
     // Phase 7E: 深度/模板状态 setters
     // ============================================================
 
-    /// <summary>绑定深度/模板状态对象。</summary>
     public void SetDepthStencilState(MetalDepthStencilState state)
     {
         ArgumentNullException.ThrowIfNull(state);
         MetalBridge.MTLRenderCommandEncoder_setDepthStencilState(Handle, state.Handle);
     }
 
-    /// <summary>设置 stencil 参考值（前后分离）。</summary>
     public void SetStencilReference(uint front, uint back)
         => MetalBridge.MTLRenderCommandEncoder_setStencilReferenceValue(Handle, front, back);
 }

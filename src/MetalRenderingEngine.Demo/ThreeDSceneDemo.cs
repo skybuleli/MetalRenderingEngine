@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using MetalRenderingEngine.Metal;
 using MetalRenderingEngine.Metal.Interop;
+using MetalRenderingEngine.Binding;
 using MetalRenderingEngine.Rendering;
 using SysMatrix = System.Numerics.Matrix4x4;
 using SysVector3 = System.Numerics.Vector3;
@@ -24,17 +25,8 @@ internal static class ThreeDSceneDemo
     private const int Height = 512;
     private const int InstanceCount = 100;
 
-    // MSC 4.0 argument buffer: buffer(2) 存 top-level 描述符
-    private const ulong ArgumentTableBufferIndex = 2;
-
-    // UAV 描述符（24 字节）：gpuAddress + length + stride
-    [StructLayout(LayoutKind.Sequential)]
-    private struct UavDescriptor
-    {
-        public ulong GpuAddress;
-        public ulong Length;
-        public ulong Stride;
-    }
+    // MSC 4.0 argument buffer：共享绑定点
+    private const ulong ArgumentTableBufferIndex = ResourceTable.ArgumentBufferBindPoint;
 
     // 顶点 argument buffer：SRV(PerFrame) + SRV(InstanceData) = 48 字节
     // 反射：EltOffset 0 = PerFrame, EltOffset 24 = instances
@@ -185,26 +177,11 @@ internal static class ThreeDSceneDemo
         // Argument buffer 描述符（反射：SRV[0]=PerFrame at offset 0, SRV[1]=instances at offset 24）
         var vertArgBuf = new VertArgBuffer
         {
-            Srv0 = new UavDescriptor  // SRV: PerFrame
-            {
-                GpuAddress = perFrameBuffer.GpuAddress,
-                Length = perFrameBuffer.Length,
-                Stride = (ulong)perFrameSize,
-            },
-            Srv1 = new UavDescriptor  // SRV: InstanceData 数组
-            {
-                GpuAddress = instanceBuffer.GpuAddress,
-                Length = instanceBuffer.Length,
-                Stride = (ulong)instanceStructSize,
-            },
+            Srv0 = perFrameBuffer.ToUavDescriptor((ulong)perFrameSize),   // SRV: PerFrame
+            Srv1 = instanceBuffer.ToUavDescriptor((ulong)instanceStructSize),  // SRV: InstanceData 数组
         };
         // fragment: 只有 SRV(PerFrame)
-        var fragArgBuf = new UavDescriptor
-        {
-            GpuAddress = perFrameBuffer.GpuAddress,
-            Length = perFrameBuffer.Length,
-            Stride = (ulong)perFrameSize,
-        };
+        var fragArgBuf = perFrameBuffer.ToUavDescriptor((ulong)perFrameSize);
 
         // 8) 命令编码：经 MetalCommandList 批量回放
         using ICommandRecorder recorder = new MetalCommandRecorder(device);

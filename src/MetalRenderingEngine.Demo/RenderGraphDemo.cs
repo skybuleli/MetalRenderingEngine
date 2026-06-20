@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using MetalRenderingEngine.Metal;
 using MetalRenderingEngine.Metal.Interop;
+using MetalRenderingEngine.Binding;
 using MetalRenderingEngine.Rendering;
 using MetalRenderingEngine.Rendering.RenderGraph;
 using SysMatrix = System.Numerics.Matrix4x4;
@@ -26,7 +27,7 @@ internal static class RenderGraphDemo
     private const int Width = 256;
     private const int Height = 256;
     private const int InstanceCount = 20;
-    private const ulong ArgumentTableBufferIndex = 2;
+    private const ulong ArgumentTableBufferIndex = ResourceTable.ArgumentBufferBindPoint;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct VertArgBuffer
@@ -173,25 +174,10 @@ internal static class RenderGraphDemo
         // 8) Argument buffer
         var vertArgBuf = new VertArgBuffer
         {
-            Srv0 = new UavDescriptor
-            {
-                GpuAddress = perFrameBuffer.GpuAddress,
-                Length = perFrameBuffer.Length,
-                Stride = (ulong)perFrameSize,
-            },
-            Srv1 = new UavDescriptor
-            {
-                GpuAddress = instanceBuffer.GpuAddress,
-                Length = instanceBuffer.Length,
-                Stride = (ulong)instanceStructSize,
-            },
+            Srv0 = perFrameBuffer.ToUavDescriptor((ulong)perFrameSize),
+            Srv1 = instanceBuffer.ToUavDescriptor((ulong)instanceStructSize),
         };
-        var fragArgBuf = new UavDescriptor
-        {
-            GpuAddress = perFrameBuffer.GpuAddress,
-            Length = perFrameBuffer.Length,
-            Stride = (ulong)perFrameSize,
-        };
+        var fragArgBuf = perFrameBuffer.ToUavDescriptor((ulong)perFrameSize);
 
         // 9) 构建 Render Graph — 故意乱序声明以验证拓扑排序
         var graph = new RenderGraph();

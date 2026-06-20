@@ -107,6 +107,12 @@ uint64_t MTLDevice_recommendedMaxWorkingSetSize(mtl_handle_t device) {
     return (uint64_t)[dev recommendedMaxWorkingSetSize];
 }
 
+int MTLDevice_supportsFamily(mtl_handle_t device, int gpu_family) {
+    if (device == MTL_NULL_HANDLE) return 0;
+    id<MTLDevice> dev = H2ID(device);
+    return [dev supportsFamily:(MTLGPUFamily)gpu_family] ? 1 : 0;
+}
+
 /* ============================================================
  *  MTLLibrary / MTLFunction
  * ============================================================ */
@@ -220,8 +226,46 @@ void MTLBuffer_didModifyRange(mtl_handle_t buffer, uint64_t offset, uint64_t len
 mtl_handle_t MTLDevice_newCommandQueue(mtl_handle_t device) {
     if (device == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
     id<MTLDevice> dev = H2ID(device);
-    id<MTLCommandQueue> q = [dev newCommandQueue];
+    id<MTL4CommandQueue> q = [dev newMTL4CommandQueue];
     return q ? ID2H(q) : MTL_NULL_HANDLE;
+}
+
+mtl_handle_t MTLDevice_newCommandBuffer(mtl_handle_t device) {
+    if (device == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
+    id<MTLDevice> dev = H2ID(device);
+    id<MTL4CommandBuffer> cb = [dev newCommandBuffer];
+    return cb ? ID2H(cb) : MTL_NULL_HANDLE;
+}
+
+mtl_handle_t MTLDevice_newCommandAllocator(mtl_handle_t device) {
+    if (device == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
+    id<MTLDevice> dev = H2ID(device);
+    id<MTL4CommandAllocator> alloc = [dev newCommandAllocator];
+    return alloc ? ID2H(alloc) : MTL_NULL_HANDLE;
+}
+
+mtl_handle_t MTLDevice_newArgumentTable(mtl_handle_t device) {
+    if (device == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
+    id<MTLDevice> dev = H2ID(device);
+    MTL4ArgumentTableDescriptor *desc = [[MTL4ArgumentTableDescriptor alloc] init];
+    desc.maxBufferBindCount = 31;
+    desc.maxTextureBindCount = 128;
+    desc.maxSamplerStateBindCount = 16;
+    desc.initializeBindings = YES;
+    desc.supportAttributeStrides = YES;
+    NSError *err = nil;
+    id<MTL4ArgumentTable> table = [dev newArgumentTableWithDescriptor:desc error:&err];
+    return table ? ID2H(table) : MTL_NULL_HANDLE;
+}
+
+mtl_handle_t MTLDevice_newResidencySet(mtl_handle_t device) {
+    if (device == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
+    id<MTLDevice> dev = H2ID(device);
+    MTLResidencySetDescriptor *desc = [[MTLResidencySetDescriptor alloc] init];
+    desc.initialCapacity = 16;
+    NSError *err = nil;
+    id<MTLResidencySet> set = [dev newResidencySetWithDescriptor:desc error:&err];
+    return set ? ID2H(set) : MTL_NULL_HANDLE;
 }
 
 mtl_handle_t MTLCommandQueue_commandBuffer(mtl_handle_t queue) {
@@ -232,10 +276,70 @@ mtl_handle_t MTLCommandQueue_commandBuffer(mtl_handle_t queue) {
     return cb ? ID2H(cb) : MTL_NULL_HANDLE;
 }
 
+void MTLCommandQueue_commitOne(mtl_handle_t queue, mtl_handle_t cmdbuf, mtl_handle_t *err_out) {
+    if (err_out) *err_out = MTL_NULL_HANDLE;
+    if (queue == MTL_NULL_HANDLE || cmdbuf == MTL_NULL_HANDLE) return;
+    id<MTL4CommandQueue> q = H2ID(queue);
+    id<MTL4CommandBuffer> cb = H2ID(cmdbuf);
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    __block NSError *commitErr = nil;
+    MTL4CommitOptions *opts = [[MTL4CommitOptions alloc] init];
+    [opts addFeedbackHandler:^(id<MTL4CommitFeedback> fb) {
+        commitErr = fb.error;
+        dispatch_semaphore_signal(sem);
+    }];
+    id<MTL4CommandBuffer> bufs[] = { cb };
+    [q commit:bufs count:1 options:opts];
+    dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+    if (err_out && commitErr) *err_out = ID2H(commitErr);
+}
+
+void MTLCommandQueue_waitForDrawable(mtl_handle_t queue, mtl_handle_t drawable) {
+    if (queue == MTL_NULL_HANDLE || drawable == MTL_NULL_HANDLE) return;
+    id<MTL4CommandQueue> q = H2ID(queue);
+    [q waitForDrawable:H2ID(drawable)];
+}
+
+void MTLCommandQueue_signalDrawable(mtl_handle_t queue, mtl_handle_t drawable) {
+    if (queue == MTL_NULL_HANDLE || drawable == MTL_NULL_HANDLE) return;
+    id<MTL4CommandQueue> q = H2ID(queue);
+    [q signalDrawable:H2ID(drawable)];
+}
+
+void MTLCommandQueue_signalEvent(mtl_handle_t queue, mtl_handle_t evt, uint64_t value) {
+    if (queue == MTL_NULL_HANDLE || evt == MTL_NULL_HANDLE) return;
+    id<MTL4CommandQueue> q = H2ID(queue);
+    [q signalEvent:(id<MTLEvent>)H2ID(evt) value:value];
+}
+
+void MTLCommandQueue_waitForEvent(mtl_handle_t queue, mtl_handle_t evt, uint64_t value) {
+    if (queue == MTL_NULL_HANDLE || evt == MTL_NULL_HANDLE) return;
+    id<MTL4CommandQueue> q = H2ID(queue);
+    [q waitForEvent:(id<MTLEvent>)H2ID(evt) value:value];
+}
+
 void MTLCommandBuffer_commit(mtl_handle_t cmdbuf) {
     if (cmdbuf == MTL_NULL_HANDLE) return;
     id<MTLCommandBuffer> cb = H2ID(cmdbuf);
     [cb commit];
+}
+
+void MTLCommandBuffer_beginCommandBufferWithAllocator(mtl_handle_t cmdbuf, mtl_handle_t allocator) {
+    if (cmdbuf == MTL_NULL_HANDLE || allocator == MTL_NULL_HANDLE) return;
+    id<MTL4CommandBuffer> cb = H2ID(cmdbuf);
+    [cb beginCommandBufferWithAllocator:H2ID(allocator)];
+}
+
+void MTLCommandBuffer_endCommandBuffer(mtl_handle_t cmdbuf) {
+    if (cmdbuf == MTL_NULL_HANDLE) return;
+    id<MTL4CommandBuffer> cb = H2ID(cmdbuf);
+    [cb endCommandBuffer];
+}
+
+void MTLCommandBuffer_useResidencySet(mtl_handle_t cmdbuf, mtl_handle_t residency_set) {
+    if (cmdbuf == MTL_NULL_HANDLE || residency_set == MTL_NULL_HANDLE) return;
+    id<MTL4CommandBuffer> cb = H2ID(cmdbuf);
+    [cb useResidencySet:(id<MTLResidencySet>)H2ID(residency_set)];
 }
 
 void MTLCommandBuffer_waitUntilCompleted(mtl_handle_t cmdbuf) {
@@ -263,8 +367,8 @@ mtl_handle_t MTLCommandBuffer_error(mtl_handle_t cmdbuf) {
 
 mtl_handle_t MTLCommandBuffer_computeCommandEncoder(mtl_handle_t cmdbuf) {
     if (cmdbuf == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
-    id<MTLCommandBuffer> cb = H2ID(cmdbuf);
-    id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
+    id<MTL4CommandBuffer> cb = H2ID(cmdbuf);
+    id<MTL4ComputeCommandEncoder> enc = [cb computeCommandEncoder];
     return enc ? ID2H(enc) : MTL_NULL_HANDLE;
 }
 
@@ -272,6 +376,12 @@ void MTLComputeCommandEncoder_setComputePipelineState(mtl_handle_t encoder, mtl_
     if (encoder == MTL_NULL_HANDLE || pso == MTL_NULL_HANDLE) return;
     id<MTLComputeCommandEncoder> e = H2ID(encoder);
     [e setComputePipelineState:H2ID(pso)];
+}
+
+void MTLComputeCommandEncoder_setArgumentTable(mtl_handle_t encoder, mtl_handle_t argument_table) {
+    if (encoder == MTL_NULL_HANDLE || argument_table == MTL_NULL_HANDLE) return;
+    id<MTL4ComputeCommandEncoder> e = H2ID(encoder);
+    [e setArgumentTable:(id<MTL4ArgumentTable>)H2ID(argument_table)];
 }
 
 void MTLComputeCommandEncoder_setBuffer(mtl_handle_t encoder, mtl_handle_t buffer, uint64_t offset, uint64_t index) {
@@ -428,9 +538,11 @@ mtl_handle_t MTLDevice_newRenderPipelineState(mtl_handle_t device,
 mtl_handle_t MTLCommandBuffer_renderCommandEncoder(mtl_handle_t cmdbuf,
                                                     const struct WMTRenderPassDesc *desc) {
     if (cmdbuf == MTL_NULL_HANDLE || desc == NULL) return MTL_NULL_HANDLE;
-    id<MTLCommandBuffer> cb = H2ID(cmdbuf);
+    id<MTL4CommandBuffer> cb = H2ID(cmdbuf);
 
-    MTLRenderPassDescriptor *rpd = [MTLRenderPassDescriptor renderPassDescriptor];
+    MTL4RenderPassDescriptor *rpd = [[MTL4RenderPassDescriptor alloc] init];
+    NSUInteger width = 0;
+    NSUInteger height = 0;
     for (int i = 0; i < 8; i++) {
         if (desc->colors[i].texture != MTL_NULL_HANDLE) {
             rpd.colorAttachments[i].texture = H2ID(desc->colors[i].texture);
@@ -445,6 +557,11 @@ mtl_handle_t MTLCommandBuffer_renderCommandEncoder(mtl_handle_t cmdbuf,
             if (desc->colors[i].resolve_texture != MTL_NULL_HANDLE) {
                 rpd.colorAttachments[i].resolveTexture = H2ID(desc->colors[i].resolve_texture);
             }
+            if (width == 0) {
+                id<MTLTexture> tex = H2ID(desc->colors[i].texture);
+                width = [tex width];
+                height = [tex height];
+            }
         }
     }
     if (desc->depth.texture != MTL_NULL_HANDLE) {
@@ -452,15 +569,29 @@ mtl_handle_t MTLCommandBuffer_renderCommandEncoder(mtl_handle_t cmdbuf,
         rpd.depthAttachment.loadAction  = (MTLLoadAction)desc->depth.load_action;
         rpd.depthAttachment.storeAction = (MTLStoreAction)desc->depth.store_action;
         rpd.depthAttachment.clearDepth = desc->depth.clear_depth;
+        if (width == 0) {
+            id<MTLTexture> tex = H2ID(desc->depth.texture);
+            width = [tex width];
+            height = [tex height];
+        }
     }
     if (desc->stencil.texture != MTL_NULL_HANDLE) {
         rpd.stencilAttachment.texture = H2ID(desc->stencil.texture);
         rpd.stencilAttachment.loadAction  = (MTLLoadAction)desc->stencil.load_action;
         rpd.stencilAttachment.storeAction = (MTLStoreAction)desc->stencil.store_action;
         rpd.stencilAttachment.clearStencil = desc->stencil.clear_stencil;
+        if (width == 0) {
+            id<MTLTexture> tex = H2ID(desc->stencil.texture);
+            width = [tex width];
+            height = [tex height];
+        }
+    }
+    if (width != 0) {
+        rpd.renderTargetWidth = width;
+        rpd.renderTargetHeight = height;
     }
 
-    id<MTLRenderCommandEncoder> enc = [cb renderCommandEncoderWithDescriptor:rpd];
+    id<MTL4RenderCommandEncoder> enc = [cb renderCommandEncoderWithDescriptor:rpd];
     return enc ? ID2H(enc) : MTL_NULL_HANDLE;
 }
 
@@ -468,6 +599,12 @@ void MTLRenderCommandEncoder_setRenderPipelineState(mtl_handle_t encoder, mtl_ha
     if (encoder == MTL_NULL_HANDLE || pso == MTL_NULL_HANDLE) return;
     id<MTLRenderCommandEncoder> e = H2ID(encoder);
     [e setRenderPipelineState:H2ID(pso)];
+}
+
+void MTLRenderCommandEncoder_setArgumentTable(mtl_handle_t encoder, mtl_handle_t argument_table, uint32_t stages) {
+    if (encoder == MTL_NULL_HANDLE || argument_table == MTL_NULL_HANDLE) return;
+    id<MTL4RenderCommandEncoder> e = H2ID(encoder);
+    [e setArgumentTable:(id<MTL4ArgumentTable>)H2ID(argument_table) atStages:(MTLRenderStages)stages];
 }
 
 void MTLRenderCommandEncoder_setVertexBuffer(mtl_handle_t encoder, mtl_handle_t buffer,
@@ -522,66 +659,62 @@ void MTLRenderCommandEncoder_drawIndexedPrimitives(mtl_handle_t encoder,
                                                     int primitive_type,
                                                     uint64_t index_count,
                                                     int index_type,
-                                                    mtl_handle_t index_buffer,
-                                                    uint64_t index_buffer_offset) {
-    if (encoder == MTL_NULL_HANDLE || index_buffer == MTL_NULL_HANDLE) return;
-    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+                                                    uint64_t index_buffer,
+                                                    uint64_t index_buffer_length) {
+    if (encoder == MTL_NULL_HANDLE || index_buffer == 0) return;
+    id<MTL4RenderCommandEncoder> e = H2ID(encoder);
     MTLPrimitiveType pt = (primitive_type == 0) ? MTLPrimitiveTypeTriangle : MTLPrimitiveTypeTriangle;
     MTLIndexType it = (index_type == 0) ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32;
     [e drawIndexedPrimitives:pt
                   indexCount:(NSUInteger)index_count
                    indexType:it
-                 indexBuffer:H2ID(index_buffer)
-           indexBufferOffset:(NSUInteger)index_buffer_offset];
+                 indexBuffer:(MTLGPUAddress)index_buffer
+           indexBufferLength:(NSUInteger)index_buffer_length];
 }
 
 void MTLRenderCommandEncoder_drawIndexedPrimitivesInstanced(mtl_handle_t encoder,
                                                              int primitive_type,
                                                              uint64_t index_count,
                                                              int index_type,
-                                                             mtl_handle_t index_buffer,
-                                                             uint64_t index_buffer_offset,
+                                                             uint64_t index_buffer,
+                                                             uint64_t index_buffer_length,
                                                              uint64_t instance_count) {
-    if (encoder == MTL_NULL_HANDLE || index_buffer == MTL_NULL_HANDLE) return;
-    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+    if (encoder == MTL_NULL_HANDLE || index_buffer == 0) return;
+    id<MTL4RenderCommandEncoder> e = H2ID(encoder);
     MTLPrimitiveType pt = (primitive_type == 0) ? MTLPrimitiveTypeTriangle : MTLPrimitiveTypeTriangle;
     MTLIndexType it = (index_type == 0) ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32;
     [e drawIndexedPrimitives:pt
                   indexCount:(NSUInteger)index_count
                    indexType:it
-                 indexBuffer:H2ID(index_buffer)
-           indexBufferOffset:(NSUInteger)index_buffer_offset
+                 indexBuffer:(MTLGPUAddress)index_buffer
+           indexBufferLength:(NSUInteger)index_buffer_length
                instanceCount:(NSUInteger)instance_count];
 }
 
 void MTLRenderCommandEncoder_drawPrimitivesIndirect(mtl_handle_t encoder,
                                                      int primitive_type,
-                                                     mtl_handle_t indirect_buffer,
-                                                     uint64_t indirect_buffer_offset) {
-    if (encoder == MTL_NULL_HANDLE || indirect_buffer == MTL_NULL_HANDLE) return;
-    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+                                                     uint64_t indirect_buffer) {
+    if (encoder == MTL_NULL_HANDLE || indirect_buffer == 0) return;
+    id<MTL4RenderCommandEncoder> e = H2ID(encoder);
     MTLPrimitiveType pt = (primitive_type == 0) ? MTLPrimitiveTypeTriangle : MTLPrimitiveTypeTriangle;
-    [e drawPrimitives:pt
-       indirectBuffer:H2ID(indirect_buffer)
- indirectBufferOffset:(NSUInteger)indirect_buffer_offset];
+    [e drawPrimitives:pt indirectBuffer:(MTLGPUAddress)indirect_buffer];
 }
 
 void MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect(mtl_handle_t encoder,
                                                             int primitive_type,
                                                             int index_type,
-                                                            mtl_handle_t index_buffer,
-                                                            mtl_handle_t indirect_buffer,
-                                                            uint64_t indirect_buffer_offset) {
-    if (encoder == MTL_NULL_HANDLE || index_buffer == MTL_NULL_HANDLE || indirect_buffer == MTL_NULL_HANDLE) return;
-    id<MTLRenderCommandEncoder> e = H2ID(encoder);
+                                                            uint64_t index_buffer,
+                                                            uint64_t index_buffer_length,
+                                                            uint64_t indirect_buffer) {
+    if (encoder == MTL_NULL_HANDLE || index_buffer == 0 || indirect_buffer == 0) return;
+    id<MTL4RenderCommandEncoder> e = H2ID(encoder);
     MTLPrimitiveType pt = (primitive_type == 0) ? MTLPrimitiveTypeTriangle : MTLPrimitiveTypeTriangle;
     MTLIndexType it = (index_type == 0) ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32;
     [e drawIndexedPrimitives:pt
                    indexType:it
-                 indexBuffer:H2ID(index_buffer)
-           indexBufferOffset:0
-              indirectBuffer:H2ID(indirect_buffer)
-    indirectBufferOffset:(NSUInteger)indirect_buffer_offset];
+                 indexBuffer:(MTLGPUAddress)index_buffer
+           indexBufferLength:(NSUInteger)index_buffer_length
+              indirectBuffer:(MTLGPUAddress)indirect_buffer];
 }
 
 void MTLRenderCommandEncoder_endEncoding(mtl_handle_t encoder) {
@@ -846,6 +979,55 @@ uint64_t MTLSamplerState_gpuResourceID(mtl_handle_t sampler) {
 }
 
 /* ============================================================
+ *  MTL4ArgumentTable / MTLResidencySet
+ * ============================================================ */
+
+void MTLArgumentTable_setAddress(mtl_handle_t table, uint64_t gpu_address, uint64_t index) {
+    if (table == MTL_NULL_HANDLE) return;
+    id<MTL4ArgumentTable> t = H2ID(table);
+    [t setAddress:(MTLGPUAddress)gpu_address atIndex:(NSUInteger)index];
+}
+
+void MTLArgumentTable_setAddressStride(mtl_handle_t table, uint64_t gpu_address, uint64_t stride, uint64_t index) {
+    if (table == MTL_NULL_HANDLE) return;
+    id<MTL4ArgumentTable> t = H2ID(table);
+    [t setAddress:(MTLGPUAddress)gpu_address attributeStride:(NSUInteger)stride atIndex:(NSUInteger)index];
+}
+
+void MTLArgumentTable_setResource(mtl_handle_t table, uint64_t resource_id, uint64_t index) {
+    if (table == MTL_NULL_HANDLE) return;
+    id<MTL4ArgumentTable> t = H2ID(table);
+    MTLResourceID rid = { ._impl = resource_id };
+    [t setResource:rid atBufferIndex:(NSUInteger)index];
+}
+
+void MTLArgumentTable_setTexture(mtl_handle_t table, uint64_t resource_id, uint64_t index) {
+    if (table == MTL_NULL_HANDLE) return;
+    id<MTL4ArgumentTable> t = H2ID(table);
+    MTLResourceID rid = { ._impl = resource_id };
+    [t setTexture:rid atIndex:(NSUInteger)index];
+}
+
+void MTLArgumentTable_setSamplerState(mtl_handle_t table, uint64_t resource_id, uint64_t index) {
+    if (table == MTL_NULL_HANDLE) return;
+    id<MTL4ArgumentTable> t = H2ID(table);
+    MTLResourceID rid = { ._impl = resource_id };
+    [t setSamplerState:rid atIndex:(NSUInteger)index];
+}
+
+void MTLResidencySet_addAllocation(mtl_handle_t residency_set, mtl_handle_t allocation) {
+    if (residency_set == MTL_NULL_HANDLE || allocation == MTL_NULL_HANDLE) return;
+    id<MTLResidencySet> set = H2ID(residency_set);
+    [set addAllocation:(id<MTLAllocation>)H2ID(allocation)];
+}
+
+void MTLResidencySet_commit(mtl_handle_t residency_set) {
+    if (residency_set == MTL_NULL_HANDLE) return;
+    id<MTLResidencySet> set = H2ID(residency_set);
+    [set commit];
+}
+
+/* ============================================================
  *  Phase 3: MTLFence
  * ============================================================ */
 
@@ -1096,197 +1278,4 @@ mtl_handle_t MTLRenderPassDescriptor_createForTexture(mtl_handle_t texture) {
 
 void MTLRenderPassDescriptor_release(mtl_handle_t desc) {
     if (desc != MTL_NULL_HANDLE) CFRelease((CFTypeRef)(void*)desc);
-}
-
-/* ============================================================
- *  Phase 6: 批量命令编码器回放
- *  参照 DXMT winemetal_unix.c:786-869 的 while+switch 模式。
- *  每个回放函数只 H2ID(encoder) 一次，遍历链表按 type 分发。
- * ============================================================ */
-
-/* Compute 回放：拆成 helper 以满足 ≤20 行约束（AGENTS.md §4.2）。
- * threadgroup_size 随 SetPipelineState 缓存，供后续 Dispatch 消费
- * —— 与 DXMT 行为一致（链表内 SetPSO 必须先于 Dispatch）。 */
-static void replay_compute_cmd(id<MTLComputeCommandEncoder> e,
-                               const struct wmtcmd_base *cmd,
-                               MTLSize *threadgroup_size) {
-    switch ((enum WMTComputeCmdType)cmd->type) {
-    case WMTComputeCmdSetPipelineState: {
-        const struct wmtcmd_compute_setpso *b = (const void*)cmd;
-        [e setComputePipelineState:H2ID(b->pso)];
-        threadgroup_size->width  = (NSUInteger)b->threadgroup_size.width;
-        threadgroup_size->height = (NSUInteger)b->threadgroup_size.height;
-        threadgroup_size->depth  = (NSUInteger)b->threadgroup_size.depth;
-        break;
-    }
-    case WMTComputeCmdUseResource: {
-        const struct wmtcmd_compute_useresource *b = (const void*)cmd;
-        [e useResource:(id<MTLResource>)H2ID(b->resource) usage:(MTLResourceUsage)b->usage];
-        break;
-    }
-    case WMTComputeCmdSetBytes: {
-        const struct wmtcmd_compute_setbytes *b = (const void*)cmd;
-        [e setBytes:b->bytes length:(NSUInteger)b->length atIndex:(NSUInteger)b->index];
-        break;
-    }
-    case WMTComputeCmdDispatch: {
-        const struct wmtcmd_compute_dispatch *b = (const void*)cmd;
-        MTLSize g = MTLSizeMake((NSUInteger)b->threadgroups_per_grid.width,
-                                (NSUInteger)b->threadgroups_per_grid.height,
-                                (NSUInteger)b->threadgroups_per_grid.depth);
-        [e dispatchThreadgroups:g threadsPerThreadgroup:*threadgroup_size];
-        break;
-    }
-    case WMTComputeCmdEndEncoding:
-        [e endEncoding];
-        break;
-    default:
-        break;  /* 未知类型静默跳过（release 保守策略） */
-    }
-}
-
-void MTLComputeCommandEncoder_encodeCommands(mtl_handle_t encoder, const struct wmtcmd_base *head) {
-    if (encoder == MTL_NULL_HANDLE || head == NULL) return;
-    id<MTLComputeCommandEncoder> e = H2ID(encoder);
-    MTLSize threadgroup_size = {0, 0, 0};
-    while (head) {
-        replay_compute_cmd(e, head, &threadgroup_size);
-        head = head->next;
-    }
-}
-
-/* Render 回放：同理拆 helper。 */
-static void replay_render_cmd(id<MTLRenderCommandEncoder> e,
-                              const struct wmtcmd_base *cmd) {
-    switch ((enum WMTRenderCmdType)cmd->type) {
-    case WMTRenderCmdSetPipelineState: {
-        const struct wmtcmd_render_setpso *b = (const void*)cmd;
-        [e setRenderPipelineState:H2ID(b->pso)];
-        break;
-    }
-    case WMTRenderCmdSetViewport: {
-        const struct wmtcmd_render_setviewport *b = (const void*)cmd;
-        MTLViewport vp = { b->x, b->y, b->w, b->h, b->znear, b->zfar };
-        [e setViewport:vp];
-        break;
-    }
-    case WMTRenderCmdSetVertexBytes: {
-        const struct wmtcmd_render_setbytes *b = (const void*)cmd;
-        [e setVertexBytes:b->bytes length:(NSUInteger)b->length atIndex:(NSUInteger)b->index];
-        break;
-    }
-    case WMTRenderCmdSetFragmentBytes: {
-        const struct wmtcmd_render_setbytes *b = (const void*)cmd;
-        [e setFragmentBytes:b->bytes length:(NSUInteger)b->length atIndex:(NSUInteger)b->index];
-        break;
-    }
-    case WMTRenderCmdUseResource: {
-        const struct wmtcmd_render_useresource *b = (const void*)cmd;
-        [e useResource:(id<MTLResource>)H2ID(b->resource)
-                 usage:(MTLResourceUsage)b->usage
-                stages:(MTLRenderStages)b->stages];
-        break;
-    }
-    case WMTRenderCmdDrawPrimitives: {
-        const struct wmtcmd_render_draw *b = (const void*)cmd;
-        /* primitive_type=0 → Triangle（与现有 drawPrimitives 约定一致） */
-        if (b->instance_count > 1) {
-            [e drawPrimitives:MTLPrimitiveTypeTriangle
-                  vertexStart:(NSUInteger)b->vertex_start
-                  vertexCount:(NSUInteger)b->vertex_count
-                instanceCount:(NSUInteger)b->instance_count];
-        } else {
-            [e drawPrimitives:MTLPrimitiveTypeTriangle
-                  vertexStart:(NSUInteger)b->vertex_start
-                  vertexCount:(NSUInteger)b->vertex_count];
-        }
-        break;
-    }
-    case WMTRenderCmdDrawIndexedPrimitives: {
-        const struct wmtcmd_render_draw_indexed *b = (const void*)cmd;
-        MTLIndexType it = (b->index_type == 0) ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32;
-        if (b->instance_count > 1) {
-            [e drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                          indexCount:(NSUInteger)b->index_count
-                           indexType:it
-                         indexBuffer:H2ID(b->index_buffer)
-                   indexBufferOffset:(NSUInteger)b->index_buffer_offset
-                       instanceCount:(NSUInteger)b->instance_count];
-        } else {
-            [e drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                          indexCount:(NSUInteger)b->index_count
-                           indexType:it
-                         indexBuffer:H2ID(b->index_buffer)
-                   indexBufferOffset:(NSUInteger)b->index_buffer_offset];
-        }
-        break;
-    }
-    case WMTRenderCmdDrawIndirectPrimitives: {
-        const struct wmtcmd_render_draw_indirect *b = (const void*)cmd;
-        [e drawPrimitives:MTLPrimitiveTypeTriangle
-           indirectBuffer:H2ID(b->indirect_buffer)
-     indirectBufferOffset:(NSUInteger)b->indirect_buffer_offset];
-        break;
-    }
-    case WMTRenderCmdDrawIndexedIndirectPrimitives: {
-        const struct wmtcmd_render_draw_indexed_indirect *b = (const void*)cmd;
-        MTLIndexType it = (b->index_type == 0) ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32;
-        [e drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                       indexType:it
-                     indexBuffer:H2ID(b->index_buffer)
-               indexBufferOffset:0
-                  indirectBuffer:H2ID(b->indirect_buffer)
-        indirectBufferOffset:(NSUInteger)b->indirect_buffer_offset];
-        break;
-    }
-    case WMTRenderCmdEndEncoding:
-        [e endEncoding];
-        break;
-    case WMTRenderCmdSetCullMode: {
-        const struct wmtcmd_render_setcullmode *b = (const void*)cmd;
-        [e setCullMode:(MTLCullMode)b->cull_mode];
-        break;
-    }
-    case WMTRenderCmdSetFrontFacing: {
-        const struct wmtcmd_render_setfrontfacing *b = (const void*)cmd;
-        [e setFrontFacingWinding:(MTLWinding)b->winding];
-        break;
-    }
-    case WMTRenderCmdSetDepthBias: {
-        const struct wmtcmd_render_setdepthbias *b = (const void*)cmd;
-        [e setDepthBias:b->bias slopeScale:b->slope_scale clamp:b->clamp];
-        break;
-    }
-    case WMTRenderCmdSetDepthClipMode: {
-        const struct wmtcmd_render_setdepthclipmode *b = (const void*)cmd;
-        [e setDepthClipMode:(MTLDepthClipMode)b->clip_mode];
-        break;
-    }
-    case WMTRenderCmdSetTriangleFillMode: {
-        const struct wmtcmd_render_settrianglefillmode *b = (const void*)cmd;
-        [e setTriangleFillMode:(MTLTriangleFillMode)b->fill_mode];
-        break;
-    }
-    case WMTRenderCmdSetDepthStencilState: {
-        const struct wmtcmd_render_setdepthstencilstate *b = (const void*)cmd;
-        [e setDepthStencilState:H2ID(b->state)];
-        break;
-    }
-    case WMTRenderCmdSetStencilReference: {
-        const struct wmtcmd_render_setstencilreference *b = (const void*)cmd;
-        [e setStencilFrontReferenceValue:b->front backReferenceValue:b->back];
-        break;
-    }
-    default:
-        break;
-    }
-}
-
-void MTLRenderCommandEncoder_encodeCommands(mtl_handle_t encoder, const struct wmtcmd_base *head) {
-    if (encoder == MTL_NULL_HANDLE || head == NULL) return;
-    id<MTLRenderCommandEncoder> e = H2ID(encoder);
-    while (head) {
-        replay_render_cmd(e, head);
-        head = head->next;
-    }
 }

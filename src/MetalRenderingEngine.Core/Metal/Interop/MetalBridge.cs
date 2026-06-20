@@ -48,6 +48,10 @@ internal static partial class MetalBridge
     [LibraryImport(LibraryName, EntryPoint = "MTLDevice_recommendedMaxWorkingSetSize")]
     public static partial ulong MTLDevice_recommendedMaxWorkingSetSize(nuint device);
 
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_supportsFamily")]
+    [return: MarshalAs(UnmanagedType.I4)]
+    public static partial int MTLDevice_supportsFamily(nuint device, int gpu_family);
+
     // ============================================================
     //  Phase 7A: MTLDepthStencilState
     // ============================================================
@@ -111,6 +115,45 @@ internal static partial class MetalBridge
     [LibraryImport(LibraryName, EntryPoint = "MTLCommandQueue_commandBuffer")]
     public static partial nuint MTLCommandQueue_commandBuffer(nuint queue);
 
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newCommandBuffer")]
+    public static partial nuint MTLDevice_newCommandBuffer(nuint device);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newCommandAllocator")]
+    public static partial nuint MTLDevice_newCommandAllocator(nuint device);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newArgumentTable")]
+    public static partial nuint MTLDevice_newArgumentTable(nuint device);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDevice_newResidencySet")]
+    public static partial nuint MTLDevice_newResidencySet(nuint device);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_beginCommandBufferWithAllocator")]
+    public static partial void MTLCommandBuffer_beginCommandBufferWithAllocator(nuint cmdbuf, nuint allocator);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_endCommandBuffer")]
+    public static partial void MTLCommandBuffer_endCommandBuffer(nuint cmdbuf);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_useResidencySet")]
+    public static partial void MTLCommandBuffer_useResidencySet(nuint cmdbuf, nuint residencySet);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandQueue_commitOne")]
+    public static unsafe partial void MTLCommandQueue_commitOne(nuint queue, nuint cmdbuf, nuint* errorOut);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandQueue_waitForDrawable")]
+    public static partial void MTLCommandQueue_waitForDrawable(nuint queue, nuint drawable);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandQueue_signalDrawable")]
+    public static partial void MTLCommandQueue_signalDrawable(nuint queue, nuint drawable);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandQueue_signalEvent")]
+    public static partial void MTLCommandQueue_signalEvent(nuint queue, nuint evt, ulong value);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLCommandQueue_waitForEvent")]
+    public static partial void MTLCommandQueue_waitForEvent(nuint queue, nuint evt, ulong value);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLDrawable_present")]
+    public static partial void MTLDrawable_present(nuint drawable);
+
     [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_commit")]
     public static partial void MTLCommandBuffer_commit(nuint cmdbuf);
 
@@ -133,17 +176,23 @@ internal static partial class MetalBridge
     [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_setComputePipelineState")]
     public static partial void MTLComputeCommandEncoder_setComputePipelineState(nuint encoder, nuint pso);
 
-    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_setBuffer")]
-    public static partial void MTLComputeCommandEncoder_setBuffer(nuint encoder, nuint buffer, ulong offset, ulong index);
+    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_setArgumentTable")]
+    public static partial void MTLComputeCommandEncoder_setArgumentTable(nuint encoder, nuint argumentTable);
 
-    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_setBytes")]
-    public static unsafe partial void MTLComputeCommandEncoder_setBytes(nuint encoder, void* bytes, ulong length, ulong index);
+    [LibraryImport(LibraryName, EntryPoint = "MTLArgumentTable_setAddress")]
+    public static partial void MTLArgumentTable_setAddress(nuint table, ulong gpuAddress, ulong index);
 
-    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_setTexture")]
-    public static partial void MTLComputeCommandEncoder_setTexture(nuint encoder, nuint texture, ulong index);
+    [LibraryImport(LibraryName, EntryPoint = "MTLArgumentTable_setAddressStride")]
+    public static partial void MTLArgumentTable_setAddressStride(nuint table, ulong gpuAddress, ulong stride, ulong index);
 
-    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_useResource")]
-    public static partial void MTLComputeCommandEncoder_useResource(nuint encoder, nuint resource, uint usage);
+    [LibraryImport(LibraryName, EntryPoint = "MTLArgumentTable_setResource")]
+    public static partial void MTLArgumentTable_setResource(nuint table, ulong resourceId, ulong index);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLArgumentTable_setTexture")]
+    public static partial void MTLArgumentTable_setTexture(nuint table, ulong resourceId, ulong index);
+
+    [LibraryImport(LibraryName, EntryPoint = "MTLArgumentTable_setSamplerState")]
+    public static partial void MTLArgumentTable_setSamplerState(nuint table, ulong resourceId, ulong index);
 
     [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_dispatchThreadgroups")]
     public static partial void MTLComputeCommandEncoder_dispatchThreadgroups(nuint encoder, WMTSize threadgroups_per_grid, WMTSize threads_per_threadgroup);
@@ -168,8 +217,8 @@ internal static partial class MetalBridge
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setRenderPipelineState")]
     public static partial void MTLRenderCommandEncoder_setRenderPipelineState(nuint encoder, nuint pso);
 
-    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setVertexBuffer")]
-    public static partial void MTLRenderCommandEncoder_setVertexBuffer(nuint encoder, nuint buffer, ulong offset, ulong index);
+    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setArgumentTable")]
+    public static partial void MTLRenderCommandEncoder_setArgumentTable(nuint encoder, nuint argumentTable, uint stages);
 
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_setViewport")]
     public static partial void MTLRenderCommandEncoder_setViewport(nuint encoder, float x, float y, float w, float h, float znear, float zfar);
@@ -184,16 +233,16 @@ internal static partial class MetalBridge
     public static partial void MTLRenderCommandEncoder_drawPrimitivesInstanced(nuint encoder, int primitive_type, ulong vertex_start, ulong vertex_count, ulong instance_count);
 
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_drawIndexedPrimitives")]
-    public static partial void MTLRenderCommandEncoder_drawIndexedPrimitives(nuint encoder, int primitive_type, ulong index_count, int index_type, nuint index_buffer, ulong index_buffer_offset);
+    public static partial void MTLRenderCommandEncoder_drawIndexedPrimitives(nuint encoder, int primitive_type, ulong index_count, int index_type, ulong index_buffer, ulong index_buffer_length);
 
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_drawIndexedPrimitivesInstanced")]
-    public static partial void MTLRenderCommandEncoder_drawIndexedPrimitivesInstanced(nuint encoder, int primitive_type, ulong index_count, int index_type, nuint index_buffer, ulong index_buffer_offset, ulong instance_count);
+    public static partial void MTLRenderCommandEncoder_drawIndexedPrimitivesInstanced(nuint encoder, int primitive_type, ulong index_count, int index_type, ulong index_buffer, ulong index_buffer_length, ulong instance_count);
 
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_drawPrimitivesIndirect")]
-    public static partial void MTLRenderCommandEncoder_drawPrimitivesIndirect(nuint encoder, int primitive_type, nuint indirect_buffer, ulong indirect_buffer_offset);
+    public static partial void MTLRenderCommandEncoder_drawPrimitivesIndirect(nuint encoder, int primitive_type, ulong indirect_buffer);
 
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect")]
-    public static partial void MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect(nuint encoder, int primitive_type, int index_type, nuint index_buffer, nuint indirect_buffer, ulong indirect_buffer_offset);
+    public static partial void MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect(nuint encoder, int primitive_type, int index_type, ulong index_buffer, ulong index_buffer_length, ulong indirect_buffer);
 
     [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_endEncoding")]
     public static partial void MTLRenderCommandEncoder_endEncoding(nuint encoder);
@@ -225,9 +274,6 @@ internal static partial class MetalBridge
 
     [LibraryImport(LibraryName, EntryPoint = "CAMetalDrawable_texture")]
     public static partial nuint CAMetalDrawable_texture(nuint drawable);
-
-    [LibraryImport(LibraryName, EntryPoint = "MTLCommandBuffer_presentDrawable")]
-    public static partial void MTLCommandBuffer_presentDrawable(nuint cmdbuf, nuint drawable);
 
     [LibraryImport(LibraryName, EntryPoint = "Cocoa_PollEvents")]
     public static partial int Cocoa_PollEvents();
@@ -404,13 +450,10 @@ internal static partial class MetalBridge
     public static unsafe partial void MTLSharedEvent_notifyListener(
         nuint evt, nuint listener, ulong value, SharedEventCallback callback, nuint userData);
 
-    // ============================================================
-    //  Phase 6: 批量命令编码器回放（wmtcmd 链表一次 P/Invoke）
-    // ============================================================
+    [LibraryImport(LibraryName, EntryPoint = "MTLResidencySet_addAllocation")]
+    public static partial void MTLResidencySet_addAllocation(nuint residencySet, nuint allocation);
 
-    [LibraryImport(LibraryName, EntryPoint = "MTLComputeCommandEncoder_encodeCommands")]
-    public static unsafe partial void MTLComputeCommandEncoder_encodeCommands(nuint encoder, WMTCommandBase* head);
+    [LibraryImport(LibraryName, EntryPoint = "MTLResidencySet_commit")]
+    public static partial void MTLResidencySet_commit(nuint residencySet);
 
-    [LibraryImport(LibraryName, EntryPoint = "MTLRenderCommandEncoder_encodeCommands")]
-    public static unsafe partial void MTLRenderCommandEncoder_encodeCommands(nuint encoder, WMTCommandBase* head);
 }

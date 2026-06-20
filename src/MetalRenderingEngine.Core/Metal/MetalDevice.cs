@@ -42,6 +42,9 @@ public sealed class MetalDevice : MetalObject
     /// <summary>对当前进程推荐的最大常驻 GPU 内存（字节）。</summary>
     public ulong RecommendedMaxWorkingSetSize => MetalBridge.MTLDevice_recommendedMaxWorkingSetSize(Handle);
 
+    /// <summary>设备是否支持 Metal 4 family。</summary>
+    public bool SupportsMetal4 => MetalBridge.MTLDevice_supportsFamily(Handle, 5002) != 0;
+
     /// <summary>从 .metallib 字节流构造 MTLLibrary。</summary>
     public MetalLibrary NewLibrary(ReadOnlySpan<byte> metallibData)
     {
@@ -119,7 +122,37 @@ public sealed class MetalDevice : MetalObject
     {
         nuint h = MetalBridge.MTLDevice_newCommandQueue(Handle);
         if (h == 0) throw new MetalException("MTLDevice newCommandQueue returned nil.");
-        return new MetalCommandQueue(h);
+        return new MetalCommandQueue(h, this);
+    }
+
+    /// <summary>创建 Metal 4 命令缓冲区。</summary>
+    public MetalCommandBuffer NewCommandBuffer(MetalCommandQueue queue)
+    {
+        ArgumentNullException.ThrowIfNull(queue);
+        nuint h = MetalBridge.MTLDevice_newCommandBuffer(Handle);
+        if (h == 0) throw new MetalException("MTLDevice newCommandBuffer returned nil.");
+        return new MetalCommandBuffer(h, queue, this);
+    }
+
+    /// <summary>创建 Metal 4 命令分配器。</summary>
+    internal nuint NewCommandAllocatorHandle()
+        => MetalBridge.MTLDevice_newCommandAllocator(Handle);
+
+    /// <summary>创建 Metal 4 argument table。</summary>
+    internal nuint NewArgumentTableHandle()
+        => MetalBridge.MTLDevice_newArgumentTable(Handle);
+
+    /// <summary>创建 Metal 4 residency set。</summary>
+    internal nuint NewResidencySetHandle()
+        => MetalBridge.MTLDevice_newResidencySet(Handle);
+
+    /// <summary>创建 Metal 4 command buffer 并自动挂到指定 queue。</summary>
+    internal MetalCommandBuffer NewCommandBufferInternal(MetalCommandQueue queue)
+    {
+        ArgumentNullException.ThrowIfNull(queue);
+        nuint h = MetalBridge.MTLDevice_newCommandBuffer(Handle);
+        if (h == 0) throw new MetalException("MTLDevice newCommandBuffer returned nil.");
+        return new MetalCommandBuffer(h, queue, this);
     }
 
     public MetalRenderPipelineState NewRenderPipelineState(MetalFunction vertex, MetalFunction fragment, in WMTRenderPipelineDesc desc)

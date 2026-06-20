@@ -1,5 +1,6 @@
 using MetalRenderingEngine.Metal;
 using MetalRenderingEngine.Metal.Interop;
+using MetalRenderingEngine.Binding;
 using System.Runtime.InteropServices;
 
 namespace MetalRenderingEngine.Demo;
@@ -84,16 +85,9 @@ internal static class ComputeDemo
             // —— 这与 DXMT airconv 的 SM50_BINDING_INDEX_ARGUMENT_TABLE=1 不同；
             // MSC 4.0 实际使用 buffer(2) 留出 buffer(0)/buffer(1) 给 push constants/draw args。
             // reflection 显示 24 字节描述符 (gpuAddress, length, stride)。
-            const ulong ArgumentTableBufferIndex = 2;
+            const ulong ArgumentTableBufferIndex = ResourceTable.ArgumentBufferBindPoint;
             encoder.UseResource(buffer, MTLResourceUsage.Read | MTLResourceUsage.Write);
-
-            var uavDesc = new UavDescriptor
-            {
-                GpuAddress = buffer.GpuAddress,
-                Length     = buffer.Length,
-                Stride     = sizeof(float),
-            };
-            encoder.SetBytes(uavDesc, index: ArgumentTableBufferIndex);
+            encoder.SetBytes(buffer.ToUavDescriptor((ulong)sizeof(float)), index: ArgumentTableBufferIndex);
 
             // 1024 个元素 / 每组 64 线程 = 16 个 thread group
             var groups = new WMTSize((ulong)(ElementCount / ThreadsPerGroup), 1, 1);

@@ -3,15 +3,24 @@ using MetalRenderingEngine.Metal.Interop;
 namespace MetalRenderingEngine.Metal;
 
 /// <summary>
-/// MTLComputeCommandEncoder 封装；用来设置 PSO、绑定资源并派发 thread group。
-/// 一次 encoder pass 必须以 <see cref="EndEncoding"/> 收尾。
+/// MTL4ComputeCommandEncoder 封装。
+/// 资源绑定走 argument table，不再使用 per-encoder setBuffer / setBytes / setTexture。
 /// </summary>
 public sealed class MetalComputeCommandEncoder : MetalObject
 {
-    internal MetalComputeCommandEncoder(nuint handle) { SetNativeHandle(handle); }
+    private readonly MetalCommandBuffer _commandBuffer;
+
+    internal MetalComputeCommandEncoder(nuint handle, MetalCommandBuffer commandBuffer)
+    {
+        ArgumentNullException.ThrowIfNull(commandBuffer);
+        _commandBuffer = commandBuffer;
+        SetNativeHandle(handle);
+        MetalBridge.MTLComputeCommandEncoder_setArgumentTable(Handle, commandBuffer.ComputeArgumentTableHandle);
+    }
 
     /// <summary>结束此 encoder pass；之后 encoder 句柄不再可用（释放即可）。</summary>
-    public void EndEncoding() => MetalBridge.MTLComputeCommandEncoder_endEncoding(Handle);
+    public void EndEncoding()
+        => MetalBridge.MTLComputeCommandEncoder_endEncoding(Handle);
 
     /// <summary>切换 compute pipeline。</summary>
     public void SetComputePipelineState(MetalComputePipelineState pso)
@@ -20,34 +29,36 @@ public sealed class MetalComputeCommandEncoder : MetalObject
         MetalBridge.MTLComputeCommandEncoder_setComputePipelineState(Handle, pso.Handle);
     }
 
-    /// <summary>把 buffer 绑到 buffer(index)。</summary>
+    /// <summary>把 buffer 绑到 argument table 的 buffer(index)。</summary>
     public void SetBuffer(MetalBuffer buffer, ulong offset, ulong index)
     {
         ArgumentNullException.ThrowIfNull(buffer);
-        MetalBridge.MTLComputeCommandEncoder_setBuffer(Handle, buffer.Handle, offset, index);
+        _commandBuffer.TrackResidency(buffer);
+        MetalBridge.MTLArgumentTable_setAddress(_commandBuffer.ComputeArgumentTableHandle, buffer.GpuAddress + offset, index);
     }
 
-    /// <summary>把任意小常量数据原地传到 buffer(index)；适合 ≤ 4KB 的 uniform。</summary>
+    /// <summary>把任意小常量数据写入 scratch buffer，再以 GPU 地址绑定到 argument table。</summary>
     public unsafe void SetBytes<T>(in T value, ulong index) where T : unmanaged
     {
-        fixed (T* p = &value)
-        {
-            MetalBridge.MTLComputeCommandEncoder_setBytes(Handle, p, (ulong)sizeof(T), index);
-        }
+        T local = value;
+        ReadOnlySpan<byte> bytes = new ReadOnlySpan<byte>((byte*)&local, sizeof(T));
+        ulong address = _commandBuffer.AllocateScratch(bytes);
+        MetalBridge.MTLArgumentTable_setAddress(_commandBuffer.ComputeArgumentTableHandle, address, index);
     }
 
-    /// <summary>把任意字节数据原地传到 buffer(index)；适合 argument buffer 描述符数组等场景。</summary>
-    public unsafe void SetBytes(ReadOnlySpan<byte> data, ulong index)
+    /// <summary>把任意字节数据写入 scratch buffer，再以 GPU 地址绑定到 argument table。</summary>
+    public void SetBytes(ReadOnlySpan<byte> data, ulong index)
     {
-        fixed (byte* p = data)
-            MetalBridge.MTLComputeCommandEncoder_setBytes(Handle, p, (ulong)data.Length, index);
+        ulong address = _commandBuffer.AllocateScratch(data);
+        MetalBridge.MTLArgumentTable_setAddress(_commandBuffer.ComputeArgumentTableHandle, address, index);
     }
 
-    /// <summary>把纹理绑到 texture(index)。</summary>
+    /// <summary>把纹理绑到 argument table 的 texture(index)。</summary>
     public void SetTexture(MetalTexture texture, ulong index)
     {
         ArgumentNullException.ThrowIfNull(texture);
-        MetalBridge.MTLComputeCommandEncoder_setTexture(Handle, texture.Handle, index);
+        _commandBuffer.TrackResidency(texture);
+        MetalBridge.MTLArgumentTable_setTexture(_commandBuffer.ComputeArgumentTableHandle, texture.GpuResourceID, index);
     }
 
     /// <summary>派发 thread group：threadgroupsPerGrid × threadsPerThreadgroup。</summary>
@@ -55,12 +66,11 @@ public sealed class MetalComputeCommandEncoder : MetalObject
         => MetalBridge.MTLComputeCommandEncoder_dispatchThreadgroups(Handle, threadgroupsPerGrid, threadsPerThreadgroup);
 
     /// <summary>
-    /// 在 encoder 范围内驻留资源；用于通过 GPU 地址间接访问的场景
-    /// （例如 MSC 输出的 metallib 通过 argument buffer 引用真实 buffer）。
+    /// 记录资源驻留，不再调用已移除的 useResource。
     /// </summary>
     public void UseResource(MetalObject resource, MTLResourceUsage usage)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        MetalBridge.MTLComputeCommandEncoder_useResource(Handle, resource.Handle, (uint)usage);
+        _commandBuffer.TrackResidency(resource);
     }
 }

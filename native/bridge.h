@@ -117,6 +117,7 @@ uint64_t MTLDevice_name(mtl_handle_t device, char *buffer, uint64_t max_length);
 int MTLDevice_hasUnifiedMemory(mtl_handle_t device);
 
 uint64_t MTLDevice_recommendedMaxWorkingSetSize(mtl_handle_t device);
+int MTLDevice_supportsFamily(mtl_handle_t device, int gpu_family);
 
 /* ============================================================
  *  MTLLibrary / MTLFunction
@@ -174,11 +175,23 @@ void MTLBuffer_didModifyRange(mtl_handle_t buffer, uint64_t offset, uint64_t len
  * ============================================================ */
 
 mtl_handle_t MTLDevice_newCommandQueue(mtl_handle_t device);
+mtl_handle_t MTLDevice_newCommandBuffer(mtl_handle_t device);
+mtl_handle_t MTLDevice_newCommandAllocator(mtl_handle_t device);
+mtl_handle_t MTLDevice_newArgumentTable(mtl_handle_t device);
+mtl_handle_t MTLDevice_newResidencySet(mtl_handle_t device);
 
 mtl_handle_t MTLCommandQueue_commandBuffer(mtl_handle_t queue);
+void MTLCommandQueue_commitOne(mtl_handle_t queue, mtl_handle_t cmdbuf, mtl_handle_t *err_out);
+void MTLCommandQueue_waitForDrawable(mtl_handle_t queue, mtl_handle_t drawable);
+void MTLCommandQueue_signalDrawable(mtl_handle_t queue, mtl_handle_t drawable);
+void MTLCommandQueue_signalEvent(mtl_handle_t queue, mtl_handle_t evt, uint64_t value);
+void MTLCommandQueue_waitForEvent(mtl_handle_t queue, mtl_handle_t evt, uint64_t value);
 
 void MTLCommandBuffer_commit(mtl_handle_t cmdbuf);
 void MTLCommandBuffer_waitUntilCompleted(mtl_handle_t cmdbuf);
+void MTLCommandBuffer_beginCommandBufferWithAllocator(mtl_handle_t cmdbuf, mtl_handle_t allocator);
+void MTLCommandBuffer_endCommandBuffer(mtl_handle_t cmdbuf);
+void MTLCommandBuffer_useResidencySet(mtl_handle_t cmdbuf, mtl_handle_t residency_set);
 
 int MTLCommandBuffer_status(mtl_handle_t cmdbuf);
 
@@ -192,13 +205,7 @@ mtl_handle_t MTLCommandBuffer_error(mtl_handle_t cmdbuf);
 mtl_handle_t MTLCommandBuffer_computeCommandEncoder(mtl_handle_t cmdbuf);
 
 void MTLComputeCommandEncoder_setComputePipelineState(mtl_handle_t encoder, mtl_handle_t pso);
-void MTLComputeCommandEncoder_setBuffer(mtl_handle_t encoder, mtl_handle_t buffer, uint64_t offset, uint64_t index);
-void MTLComputeCommandEncoder_setBytes(mtl_handle_t encoder, const void *bytes, uint64_t length, uint64_t index);
-void MTLComputeCommandEncoder_setTexture(mtl_handle_t encoder, mtl_handle_t texture, uint64_t index);
-
-/* 让 GPU 在本 encoder pass 内驻留某个资源（用于通过 GPU 地址间接访问的场景）。
- * usage 为 MTLResourceUsage 位或：1=Read, 2=Write, 4=Sample */
-void MTLComputeCommandEncoder_useResource(mtl_handle_t encoder, mtl_handle_t resource, uint32_t usage);
+void MTLComputeCommandEncoder_setArgumentTable(mtl_handle_t encoder, mtl_handle_t argument_table);
 
 void MTLComputeCommandEncoder_dispatchThreadgroups(mtl_handle_t encoder,
                                                    struct WMTSize threadgroups_per_grid,
@@ -373,8 +380,8 @@ mtl_handle_t MTLCommandBuffer_renderCommandEncoder(mtl_handle_t cmdbuf,
                                                     const struct WMTRenderPassDesc *desc);
 
 void MTLRenderCommandEncoder_setRenderPipelineState(mtl_handle_t encoder, mtl_handle_t pso);
-void MTLRenderCommandEncoder_setVertexBuffer(mtl_handle_t encoder, mtl_handle_t buffer,
-                                              uint64_t offset, uint64_t index);
+void MTLRenderCommandEncoder_setArgumentTable(mtl_handle_t encoder, mtl_handle_t argument_table,
+                                              uint32_t stages);
 void MTLRenderCommandEncoder_setViewport(mtl_handle_t encoder,
                                           float x, float y, float w, float h,
                                           float znear, float zfar);
@@ -396,30 +403,29 @@ void MTLRenderCommandEncoder_drawIndexedPrimitives(mtl_handle_t encoder,
                                                     int primitive_type,      /* 0=triangle */
                                                     uint64_t index_count,
                                                     int index_type,          /* 0=uint16, 1=uint32 */
-                                                    mtl_handle_t index_buffer,
-                                                    uint64_t index_buffer_offset);
+                                                    uint64_t index_buffer,
+                                                    uint64_t index_buffer_length);
 
 /* Phase 7G: Instanced indexed draw */
 void MTLRenderCommandEncoder_drawIndexedPrimitivesInstanced(mtl_handle_t encoder,
                                                              int primitive_type,
                                                              uint64_t index_count,
                                                              int index_type,
-                                                             mtl_handle_t index_buffer,
-                                                             uint64_t index_buffer_offset,
+                                                             uint64_t index_buffer,
+                                                             uint64_t index_buffer_length,
                                                              uint64_t instance_count);
 
 /* Phase 7H: Indirect draw */
 void MTLRenderCommandEncoder_drawPrimitivesIndirect(mtl_handle_t encoder,
                                                      int primitive_type,
-                                                     mtl_handle_t indirect_buffer,
-                                                     uint64_t indirect_buffer_offset);
+                                                     uint64_t indirect_buffer);
 
 void MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect(mtl_handle_t encoder,
                                                             int primitive_type,
                                                             int index_type,
-                                                            mtl_handle_t index_buffer,
-                                                            mtl_handle_t indirect_buffer,
-                                                            uint64_t indirect_buffer_offset);
+                                                            uint64_t index_buffer,
+                                                            uint64_t index_buffer_length,
+                                                            uint64_t indirect_buffer);
 void MTLRenderCommandEncoder_endEncoding(mtl_handle_t encoder);
 
 /* ============================================================
@@ -610,6 +616,19 @@ mtl_handle_t MTLDevice_newSamplerState(mtl_handle_t device, const struct WMTSamp
  * sampler 必须在创建时设 supportArgumentBuffers=YES（见 MTLDevice_newSamplerState 实现），
  * 否则返回 0。用于将 sampler 写入 MSC 描述符堆条目。 */
 uint64_t MTLSamplerState_gpuResourceID(mtl_handle_t sampler);
+
+/* ============================================================
+ *  MTL4ArgumentTable / MTLResidencySet
+ * ============================================================ */
+
+void MTLArgumentTable_setAddress(mtl_handle_t table, uint64_t gpu_address, uint64_t index);
+void MTLArgumentTable_setAddressStride(mtl_handle_t table, uint64_t gpu_address, uint64_t stride, uint64_t index);
+void MTLArgumentTable_setResource(mtl_handle_t table, uint64_t resource_id, uint64_t index);
+void MTLArgumentTable_setTexture(mtl_handle_t table, uint64_t resource_id, uint64_t index);
+void MTLArgumentTable_setSamplerState(mtl_handle_t table, uint64_t resource_id, uint64_t index);
+
+void MTLResidencySet_addAllocation(mtl_handle_t residency_set, mtl_handle_t allocation);
+void MTLResidencySet_commit(mtl_handle_t residency_set);
 
 /* ============================================================
  *  Phase 3: MTLFence
@@ -898,11 +917,6 @@ struct wmtcmd_render_setstencilreference {
 struct wmtcmd_render_endencoding {
     struct wmtcmd_base base;
 };
-
-/* 回放入口点：遍历链表，按 type switch 分发到 ObjC 调用。
- * encoder 句柄只 H2ID 一次；链表内存由调用方持有，回放返回后可释放。 */
-void MTLComputeCommandEncoder_encodeCommands(mtl_handle_t encoder, const struct wmtcmd_base *head);
-void MTLRenderCommandEncoder_encodeCommands(mtl_handle_t encoder, const struct wmtcmd_base *head);
 
 #ifdef __cplusplus
 }

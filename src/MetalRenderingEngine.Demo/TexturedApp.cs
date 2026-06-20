@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using MetalRenderingEngine.Metal;
 using MetalRenderingEngine.Metal.Interop;
+using MetalRenderingEngine.Binding;
 using MetalRenderingEngine.Platform;
 
 namespace MetalRenderingEngine.Demo;
@@ -96,7 +97,7 @@ internal static class TexturedApp
     private const int W = 800, H = 600;
     private const int TexSize = 64;
     private const int BufferCount = 3;
-    private const ulong ArgIndex = 2; // MSC top_level_global_ab 在 buffer(2)
+    private const ulong ArgIndex = ResourceTable.ArgumentBufferBindPoint;
 
     public static int Run()
     {
@@ -184,22 +185,10 @@ internal static class TexturedApp
                     enc.WaitForFence(fences[slot], MTLRenderStages.Vertex);
 
                     // Vertex stage: MVP descriptor at buffer(2)
-                    var mvpDesc = new UavDescriptor
-                    {
-                        GpuAddress = uniformBuffers[slot].GpuAddress,
-                        Length = uniformBuffers[slot].Length,
-                        Stride = uboSize,
-                    };
-                    enc.SetVertexBytes<UavDescriptor>(mvpDesc, ArgIndex);
+                    enc.SetVertexBytes(uniformBuffers[slot].ToUavDescriptor(uboSize), ArgIndex);
 
                     // Fragment stage: 纹理 descriptor at buffer(2) + useResource
-                    var texDesc = new UavDescriptor
-                    {
-                        GpuAddress = texBuffer.GpuAddress,
-                        Length = texBuffer.Length,
-                        Stride = sizeof(uint),
-                    };
-                    enc.SetFragmentBytes<UavDescriptor>(texDesc, ArgIndex);
+                    enc.SetFragmentBytes(texBuffer.ToUavDescriptor((ulong)sizeof(uint)), ArgIndex);
                     enc.UseResource(texBuffer, MTLResourceUsage.Read,
                         MTLRenderStages.Fragment);
 

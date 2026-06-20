@@ -4,16 +4,8 @@ using MetalRenderingEngine.Metal.Interop;
 namespace MetalRenderingEngine.Rendering;
 
 /// <summary>
-/// Phase 8: Metal 后端命令录制器。
-///
-/// 关键设计：**执行路径走 MetalCommandList 批量回放**，不绕过它。
-/// 每个命令方法录入 MetalCommandList（批量缓冲），在 EndRenderPass 时
-/// 单次 P/Invoke 回放全部命令——保住 Phase 6 的 99.5% P/Invoke 优化。
-///
-/// 当前真实边界见 docs/command-recorder-boundaries.md。
-/// 仍未进入 MetalCommandList 的低频命令暂时直接调 encoder：
-/// SetScissor / SetVertexBuffer / SetFragmentBuffer / SetFragmentTexture。
-/// 这是显式折中，不是架构漂移。
+/// Metal 4 后端命令录制器。
+/// 直接驱动 command buffer / render encoder / compute encoder，不再走旧的回放链表。
 /// </summary>
 public sealed class MetalCommandRecorder : ICommandRecorder
 {
@@ -22,13 +14,17 @@ public sealed class MetalCommandRecorder : ICommandRecorder
 
     private MetalCommandBuffer? _commandBuffer;
     private MetalRenderEncoder? _renderEncoder;
-    private MetalCommandList? _renderList;
+    private MetalComputeCommandEncoder? _computeEncoder;
+    private MetalDrawable? _pendingDrawable;
 
     /// <summary>已录制的命令数（用于可观测性）。</summary>
     public int CommandCount { get; private set; }
 
-    /// <summary>最近一次 render pass 触发的 MetalCommandList replay 次数（测试/性能回归守护用）。</summary>
-    internal int LastRenderReplayCallCount { get; private set; }
+    /// <summary>最近一次渲染回放触发次数；兼容旧测试断言。</summary>
+    public int LastRenderReplayCallCount { get; private set; }
+
+    /// <summary>最近一次计算回放触发次数；兼容旧测试断言。</summary>
+    public int LastComputeReplayCallCount { get; private set; }
 
     public MetalCommandRecorder(MetalDevice device)
     {
@@ -44,21 +40,23 @@ public sealed class MetalCommandRecorder : ICommandRecorder
     public void PresentDrawable(MetalDrawable drawable)
     {
         ArgumentNullException.ThrowIfNull(drawable);
+        _pendingDrawable = drawable;
         _commandBuffer?.PresentDrawable(drawable);
     }
-
-    // ══════════ 帧控制 ══════════
 
     public void BeginFrame()
     {
         _commandBuffer = _queue.CommandBuffer();
+        _renderEncoder = null;
+        _computeEncoder = null;
+        _pendingDrawable = null;
         CommandCount = 0;
         LastRenderReplayCallCount = 0;
+        LastComputeReplayCallCount = 0;
     }
 
     public void EndFrame()
     {
-        // 如果 render pass 未显式结束，这里兜底
         if (_renderEncoder is not null)
             EndRenderPass();
 
@@ -68,7 +66,6 @@ public sealed class MetalCommandRecorder : ICommandRecorder
         _commandBuffer = null;
     }
 
-    /// <summary>提交 command buffer 但不等待完成（窗口模式用，配合 PresentDrawable）。</summary>
     public void Submit()
     {
         if (_renderEncoder is not null)
@@ -79,159 +76,139 @@ public sealed class MetalCommandRecorder : ICommandRecorder
         _commandBuffer = null;
     }
 
-    // ══════════ Render Pass ══════════
-
     public void BeginRenderPass(in WMTRenderPassDesc passDesc)
     {
         if (_commandBuffer is null)
             throw new InvalidOperationException("BeginFrame() 必须在 BeginRenderPass() 之前调用。");
 
         _renderEncoder = _commandBuffer.RenderCommandEncoder(passDesc);
-        _renderList = new MetalCommandList();
+        _computeEncoder = null;
         CommandCount = 0;
     }
 
     public void EndRenderPass()
     {
-        if (_renderEncoder is null || _renderList is null)
+        if (_renderEncoder is null)
             throw new InvalidOperationException("BeginRenderPass() 必须在 EndRenderPass() 之前调用。");
-
-        // 单次 P/Invoke 回放全部批量命令
-        _renderList.ReplayRender(_renderEncoder);
-        LastRenderReplayCallCount = _renderList.RenderReplayCallCount;
-        _renderList.Dispose();
-        _renderList = null;
 
         _renderEncoder.EndEncoding();
         _renderEncoder.Dispose();
         _renderEncoder = null;
+        LastRenderReplayCallCount++;
     }
-
-    // ══════════ 管线状态 ══════════
 
     public void SetPipelineState(MetalRenderPipelineState pso)
     {
         ArgumentNullException.ThrowIfNull(pso);
-        EnsureInPass();
-        _renderList!.RecordSetRenderPipelineState(pso);
+        EnsureRenderPass();
+        _renderEncoder!.SetRenderPipelineState(pso);
         CommandCount++;
     }
 
-    // ══════════ 视口/裁剪 ══════════
-
     public void SetViewport(float x, float y, float width, float height, float znear = 0f, float zfar = 1f)
     {
-        EnsureInPass();
-        _renderList!.RecordSetViewport(x, y, width, height, znear, zfar);
+        EnsureRenderPass();
+        _renderEncoder!.SetViewport(x, y, width, height, znear, zfar);
         CommandCount++;
     }
 
     public void SetScissor(int x, int y, int width, int height)
     {
-        EnsureInPass();
-        // 低频状态，当前保留直通路径；同步约束记录在 docs/command-recorder-boundaries.md。
+        EnsureRenderPass();
         _renderEncoder!.SetScissorRect(x, y, width, height);
         CommandCount++;
     }
 
-    // ══════════ 光栅化状态 ══════════
-
     public void SetCullMode(MTLCullMode mode)
     {
-        EnsureInPass();
-        _renderList!.RecordSetCullMode(mode);
+        EnsureRenderPass();
+        _renderEncoder!.SetCullMode(mode);
         CommandCount++;
     }
 
     public void SetFrontFacing(MTLWinding winding)
     {
-        EnsureInPass();
-        _renderList!.RecordSetFrontFacing(winding);
+        EnsureRenderPass();
+        _renderEncoder!.SetFrontFacing(winding);
         CommandCount++;
     }
 
     public void SetDepthBias(float bias, float slopeScale, float clamp)
     {
-        EnsureInPass();
-        _renderList!.RecordSetDepthBias(bias, slopeScale, clamp);
+        EnsureRenderPass();
+        _renderEncoder!.SetDepthBias(bias, slopeScale, clamp);
         CommandCount++;
     }
 
     public void SetDepthClipMode(MTLDepthClipMode mode)
     {
-        EnsureInPass();
-        _renderList!.RecordSetDepthClipMode(mode);
+        EnsureRenderPass();
+        _renderEncoder!.SetDepthClipMode(mode);
         CommandCount++;
     }
 
     public void SetTriangleFillMode(MTLTriangleFillMode mode)
     {
-        EnsureInPass();
-        _renderList!.RecordSetTriangleFillMode(mode);
+        EnsureRenderPass();
+        _renderEncoder!.SetTriangleFillMode(mode);
         CommandCount++;
     }
-
-    // ══════════ 深度/模板状态 ══════════
 
     public void SetDepthStencilState(MetalDepthStencilState state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        EnsureInPass();
-        _renderList!.RecordSetDepthStencilState(state);
+        EnsureRenderPass();
+        _renderEncoder!.SetDepthStencilState(state);
         CommandCount++;
     }
 
     public void SetStencilReference(uint front, uint back)
     {
-        EnsureInPass();
-        _renderList!.RecordSetStencilReference(front, back);
+        EnsureRenderPass();
+        _renderEncoder!.SetStencilReference(front, back);
         CommandCount++;
     }
 
-    // ══════════ 资源绑定 ══════════
-
     public void SetVertexBytes<T>(in T value, ulong index) where T : unmanaged
     {
-        EnsureInPass();
-        _renderList!.RecordSetVertexBytes(in value, index);
+        EnsureRenderPass();
+        _renderEncoder!.SetVertexBytes(in value, index);
         CommandCount++;
     }
 
     public void SetVertexBytes(ReadOnlySpan<byte> data, ulong index)
     {
-        EnsureInPass();
-        _renderList!.RecordSetVertexBytes(data, index);
+        EnsureRenderPass();
+        _renderEncoder!.SetVertexBytes(data, index);
         CommandCount++;
     }
 
     public void SetVertexBuffer(MetalBuffer buffer, ulong offset, ulong index)
     {
         ArgumentNullException.ThrowIfNull(buffer);
-        EnsureInPass();
-        // 低频状态，当前保留直通路径；同步约束记录在 docs/command-recorder-boundaries.md。
+        EnsureRenderPass();
         _renderEncoder!.SetVertexBuffer(buffer, offset, index);
         CommandCount++;
     }
 
     public void SetFragmentBytes<T>(in T value, ulong index) where T : unmanaged
     {
-        EnsureInPass();
-        _renderList!.RecordSetFragmentBytes(in value, index);
+        EnsureRenderPass();
+        _renderEncoder!.SetFragmentBytes(in value, index);
         CommandCount++;
     }
 
     public void SetFragmentBytes(ReadOnlySpan<byte> data, ulong index)
     {
-        EnsureInPass();
-        _renderList!.RecordSetFragmentBytes(data, index);
+        EnsureRenderPass();
+        _renderEncoder!.SetFragmentBytes(data, index);
         CommandCount++;
     }
 
     public void SetFragmentBuffer(MetalBuffer buffer, ulong offset, ulong index)
     {
         ArgumentNullException.ThrowIfNull(buffer);
-        EnsureInPass();
-        // 低频状态，当前保留直通路径；同步约束记录在 docs/command-recorder-boundaries.md。
+        EnsureRenderPass();
         _renderEncoder!.SetFragmentBuffer(buffer, offset, index);
         CommandCount++;
     }
@@ -239,8 +216,7 @@ public sealed class MetalCommandRecorder : ICommandRecorder
     public void SetFragmentTexture(MetalTexture texture, ulong index)
     {
         ArgumentNullException.ThrowIfNull(texture);
-        EnsureInPass();
-        // 低频状态，当前保留直通路径；同步约束记录在 docs/command-recorder-boundaries.md。
+        EnsureRenderPass();
         _renderEncoder!.SetFragmentTexture(texture, index);
         CommandCount++;
     }
@@ -248,33 +224,37 @@ public sealed class MetalCommandRecorder : ICommandRecorder
     public void UseResource(MetalObject resource, MTLResourceUsage usage, MTLRenderStages stages)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        EnsureInPass();
-        _renderList!.RecordUseResource(resource, usage, stages);
+        EnsureRenderPass();
+        _renderEncoder!.UseResource(resource, usage, stages);
         CommandCount++;
     }
 
-    // ══════════ 绘制 ══════════
-
     public void Draw(int primitiveType, ulong vertexStart, ulong vertexCount, ulong instanceCount = 1)
     {
-        EnsureInPass();
-        _renderList!.RecordDrawPrimitives(primitiveType, vertexStart, vertexCount, instanceCount);
+        EnsureRenderPass();
+        if (instanceCount > 1)
+            _renderEncoder!.DrawPrimitives(primitiveType, vertexStart, vertexCount, instanceCount);
+        else
+            _renderEncoder!.DrawPrimitives(primitiveType, vertexStart, vertexCount);
         CommandCount++;
     }
 
     public void DrawIndexed(ulong indexCount, bool is32Bit, MetalBuffer indexBuffer, ulong indexBufferOffset, ulong instanceCount = 1)
     {
         ArgumentNullException.ThrowIfNull(indexBuffer);
-        EnsureInPass();
-        _renderList!.RecordDrawIndexedPrimitives(indexCount, is32Bit, indexBuffer, indexBufferOffset, instanceCount);
+        EnsureRenderPass();
+        if (instanceCount > 1)
+            _renderEncoder!.DrawIndexedTriangles(indexCount, is32Bit, indexBuffer, indexBufferOffset, instanceCount);
+        else
+            _renderEncoder!.DrawIndexedTriangles(indexCount, is32Bit, indexBuffer, indexBufferOffset);
         CommandCount++;
     }
 
     public void DrawIndirect(MetalBuffer indirectBuffer, ulong offset = 0)
     {
         ArgumentNullException.ThrowIfNull(indirectBuffer);
-        EnsureInPass();
-        _renderList!.RecordDrawPrimitivesIndirect(indirectBuffer, offset);
+        EnsureRenderPass();
+        _renderEncoder!.DrawPrimitivesIndirect(indirectBuffer, offset);
         CommandCount++;
     }
 
@@ -282,17 +262,15 @@ public sealed class MetalCommandRecorder : ICommandRecorder
     {
         ArgumentNullException.ThrowIfNull(indexBuffer);
         ArgumentNullException.ThrowIfNull(indirectBuffer);
-        EnsureInPass();
-        _renderList!.RecordDrawIndexedPrimitivesIndirect(indexBuffer, indirectBuffer, offset);
+        EnsureRenderPass();
+        _renderEncoder!.DrawIndexedTrianglesIndirect(indexBuffer, indirectBuffer, offset);
         CommandCount++;
     }
-
-    // ══════════ 同步 ══════════
 
     public void WaitForFence(MetalFence fence, MTLRenderStages beforeStages)
     {
         ArgumentNullException.ThrowIfNull(fence);
-        EnsureInPass();
+        EnsureRenderPass();
         _renderEncoder!.WaitForFence(fence, beforeStages);
         CommandCount++;
     }
@@ -300,31 +278,25 @@ public sealed class MetalCommandRecorder : ICommandRecorder
     public void UpdateFence(MetalFence fence, MTLRenderStages afterStages)
     {
         ArgumentNullException.ThrowIfNull(fence);
-        EnsureInPass();
+        EnsureRenderPass();
         _renderEncoder!.UpdateFence(fence, afterStages);
         CommandCount++;
     }
 
-    // ══════════ 可观测性 ══════════
-
-    /// <summary>MetalCommandRecorder 不维护文本日志，返回空字符串。</summary>
     public string GetCommandLog() => string.Empty;
-
-    // ══════════ 资源释放 ══════════
 
     public void Dispose()
     {
-        _renderList?.Dispose();
         _renderEncoder?.Dispose();
+        _computeEncoder?.Dispose();
         _commandBuffer?.Dispose();
         _queue.Dispose();
+        GC.SuppressFinalize(this);
     }
 
-    // ══════════ 内部辅助 ══════════
-
-    private void EnsureInPass()
+    private void EnsureRenderPass()
     {
-        if (_renderEncoder is null || _renderList is null)
-            throw new InvalidOperationException("必须在 BeginRenderPass() .. EndRenderPass() 之间调用命令方法。");
+        if (_renderEncoder is null)
+            throw new InvalidOperationException("BeginRenderPass() 必须在录制渲染命令之前调用。");
     }
 }

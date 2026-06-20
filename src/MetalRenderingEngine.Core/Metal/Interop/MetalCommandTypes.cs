@@ -138,6 +138,7 @@ public unsafe struct WMTRenderDrawIndexed
     public ulong IndexCount;
     public int IndexType;        // 0=uint16, 1=uint32
     public nuint IndexBuffer;
+    public ulong IndexBufferLength;
     public ulong IndexBufferOffset;
     public ulong InstanceCount;
 }
@@ -160,6 +161,7 @@ public unsafe struct WMTRenderDrawIndexedIndirect
     public int PrimitiveType;
     public int IndexType;        // 0=uint16, 1=uint32
     public nuint IndexBuffer;
+    public ulong IndexBufferLength;
     public nuint IndirectBuffer;
     public ulong IndirectBufferOffset;
 }
