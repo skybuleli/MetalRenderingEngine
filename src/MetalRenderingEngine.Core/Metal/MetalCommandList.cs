@@ -39,6 +39,12 @@ public sealed unsafe class MetalCommandList : IDisposable
     /// <summary>ring buffer 已用字节数。</summary>
     public int BytesUsed => _writeOffset;
 
+    /// <summary>本实例 render replay 调用次数（测试/性能回归守护用）。</summary>
+    internal int RenderReplayCallCount { get; private set; }
+
+    /// <summary>本实例 compute replay 调用次数（测试/性能回归守护用）。</summary>
+    internal int ComputeReplayCallCount { get; private set; }
+
     // ── 内部：在 ring buffer 里分配 n 字节并返回指针 ──────────────
     private unsafe byte* Alloc(int size)
     {
@@ -167,6 +173,34 @@ public sealed unsafe class MetalCommandList : IDisposable
         p->Base.Type = (ushort)WMTRenderCmdType.SetFragmentBytes;
         p->Bytes = payload;
         p->Length = (ulong)sizeof(T);
+        p->Index = index;
+        LinkCommand(&p->Base);
+    }
+
+    /// <summary>录制：SetVertexBytes（动态长度 payload，拷贝到 ring buffer）。</summary>
+    public unsafe void RecordSetVertexBytes(ReadOnlySpan<byte> data, ulong index)
+    {
+        var p = (WMTRenderSetBytes*)Alloc(sizeof(WMTRenderSetBytes));
+        byte* payload = Alloc(data.Length);
+        fixed (byte* src = data)
+            Buffer.MemoryCopy(src, payload, data.Length, data.Length);
+        p->Base.Type = (ushort)WMTRenderCmdType.SetVertexBytes;
+        p->Bytes = payload;
+        p->Length = (ulong)data.Length;
+        p->Index = index;
+        LinkCommand(&p->Base);
+    }
+
+    /// <summary>录制：SetFragmentBytes（动态长度 payload，拷贝到 ring buffer）。</summary>
+    public unsafe void RecordSetFragmentBytes(ReadOnlySpan<byte> data, ulong index)
+    {
+        var p = (WMTRenderSetBytes*)Alloc(sizeof(WMTRenderSetBytes));
+        byte* payload = Alloc(data.Length);
+        fixed (byte* src = data)
+            Buffer.MemoryCopy(src, payload, data.Length, data.Length);
+        p->Base.Type = (ushort)WMTRenderCmdType.SetFragmentBytes;
+        p->Bytes = payload;
+        p->Length = (ulong)data.Length;
         p->Index = index;
         LinkCommand(&p->Base);
     }
@@ -316,6 +350,7 @@ public sealed unsafe class MetalCommandList : IDisposable
     public unsafe void ReplayCompute(MetalComputeCommandEncoder encoder)
     {
         if (_head == null) return;
+        ComputeReplayCallCount++;
         MetalBridge.MTLComputeCommandEncoder_encodeCommands(encoder.Handle, _head);
         Clear();
     }
@@ -324,6 +359,7 @@ public sealed unsafe class MetalCommandList : IDisposable
     public unsafe void ReplayRender(MetalRenderEncoder encoder)
     {
         if (_head == null) return;
+        RenderReplayCallCount++;
         MetalBridge.MTLRenderCommandEncoder_encodeCommands(encoder.Handle, _head);
         Clear();
     }

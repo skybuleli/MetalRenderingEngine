@@ -9,6 +9,8 @@ obj/
 *.metallib
 *.dxil
 *.generated.slang
+*.reflect.json
+*.bindings.json
 
 # ===== .NET 中间产物 =====
 *.user
@@ -29,3 +31,9 @@ Icon?
 TestResults/
 *.coverage
 *.trx
+imgui.ini
+
+# ===== 本地知识库 / 临时审查产物 =====
+MyGameRnederWiki/
+command-recorder-architecture.html
+*.patch

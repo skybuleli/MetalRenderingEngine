@@ -70,8 +70,9 @@ while IFS= read -r -d '' genfile; do
         -profile sm_6_0 \
         -o "$dxil"
 
-    # 2) DXIL → metallib
-    metal-shaderconverter "$dxil" -o "$metallib"
+    # 2) DXIL → metallib（Phase 10D: 同时产出 reflect.json 供运行时 ReflectionLoader 加载）
+    metal-shaderconverter "$dxil" -o "$metallib" \
+      --output-reflection-file "${metallib%.metallib}.reflect.json"
 
     echo "[shader:gen] ✅ $basename → $metallib"
     compiled=$((compiled + 1))

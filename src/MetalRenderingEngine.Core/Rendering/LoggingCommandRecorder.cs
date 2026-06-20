@@ -94,8 +94,10 @@ public sealed class LoggingCommandRecorder : ICommandRecorder
     // ══════════ 资源绑定 ══════════
 
     public void SetVertexBytes<T>(in T value, ulong index) where T : unmanaged { Log($"SetVertexBytes<{typeof(T).Name}>(index={index})"); _inner.SetVertexBytes(in value, index); }
+    public void SetVertexBytes(ReadOnlySpan<byte> data, ulong index) { Log($"SetVertexBytes(span len={data.Length},index={index})"); _inner.SetVertexBytes(data, index); }
     public void SetVertexBuffer(MetalBuffer buffer, ulong offset, ulong index) { Log($"SetVertexBuffer(handle={buffer.Handle},index={index})"); _inner.SetVertexBuffer(buffer, offset, index); }
     public void SetFragmentBytes<T>(in T value, ulong index) where T : unmanaged { Log($"SetFragmentBytes<{typeof(T).Name}>(index={index})"); _inner.SetFragmentBytes(in value, index); }
+    public void SetFragmentBytes(ReadOnlySpan<byte> data, ulong index) { Log($"SetFragmentBytes(span len={data.Length},index={index})"); _inner.SetFragmentBytes(data, index); }
     public void SetFragmentBuffer(MetalBuffer buffer, ulong offset, ulong index) { Log($"SetFragmentBuffer(handle={buffer.Handle},index={index})"); _inner.SetFragmentBuffer(buffer, offset, index); }
     public void SetFragmentTexture(MetalTexture texture, ulong index) { Log($"SetFragmentTexture(handle={texture.Handle},index={index})"); _inner.SetFragmentTexture(texture, index); }
     public void UseResource(MetalObject resource, MTLResourceUsage usage, MTLRenderStages stages) { Log($"UseResource(handle={resource.Handle},usage={usage},stages={stages})"); _inner.UseResource(resource, usage, stages); }

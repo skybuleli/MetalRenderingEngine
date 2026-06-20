@@ -47,204 +47,84 @@
 
 ---
 
-## 三、详细任务拆分
+## 三、当前真实状态（2026-06-20）
 
-### Phase 7: 3D 渲染基础补齐（修正版）
+> 本节覆盖原“详细任务拆分”的完成状态。代码与测试已经推进到 Phase 10，
+> 后续维护以本节为准；上方“审查发现”保留为历史问题存档。
 
-> 目标：带深度测试、背面剔除、GPU 实例化、MRT 的 3D 场景，且命令走 `MetalCommandList` 批量回放。
+### Phase 7: 3D 渲染基础
 
-#### 7A. Depth/Stencil 状态对象
-- [ ] `bridge.h` 新增 `WMTStencilDescriptor` + `WMTDepthStencilDesc` 结构体；`MTLDevice_newDepthStencilState(device, desc) → handle`
-- [ ] `bridge.m` 实现（≤20 行，按现有模式 `__bridge_retained`）
-- [ ] `MetalBridge.cs` 新增 DllImport；`MetalEnums.cs` 新增 `MTLCompareFunction` / `MTLStencilOperation` 枚举（注：`WMTCompareFunction` 已存在 `bridge.h:383`，C# 端需补对应枚举或复用）
-- [ ] `MetalDepthStencilState : MetalObject` SafeHandle 封装
-- [ ] 测试：`DepthStencilStateTests` — 创建 state、查询 handle 非 0、确定性释放
+**已完成：**
+- Depth/Stencil 状态对象：`WMTDepthStencilDesc` / `MetalDepthStencilState` / bridge / DllImport / 生命周期测试。
+- RenderPass depth/stencil 完整性：depth/stencil attachment 的 load/store/clear 已传播，并有深度写入/像素测试覆盖。
+- Depth/Stencil 像素格式：`Depth32Float` 与 `Depth24Unorm_Stencil8` 可创建，深度格式辅助已落地。
+- 光栅化状态：cull/front-facing/depth-bias/depth-clip/fill-mode 已接入 bridge、`MetalRenderEncoder`、`MetalCommandList` replay。
+- DepthStencil/StencilReference setters：已接入 bridge、encoder、`MetalCommandList` replay。
+- VertexDescriptor：`WMTVertexDescriptor` 已进入 pipeline descriptor 与 builder。
+- Instanced/Indexed/Indirect Draw：直接 encoder 与 `MetalCommandList` 路径均已实现。
+- MRT helper：`PipelineBuilder.WithColorAttachment(index, ...)` / `.WithDepth(...)` 已用于 demo。
+- ThreeDScene：100 instanced cubes、深度测试、背面剔除、双 MRT、Blinn-Phong、`ICommandRecorder` 批量回放路径已落地。
 
-#### 7B. 修复 RenderPass depth/stencil 完整性
-- [ ] `bridge.m` `MTLCommandBuffer_renderCommandEncoder` — 补全 depth/stencil attachment 的 `loadAction`/`storeAction`/`clearDepth`/`clearStencil` 传播
-- [ ] 验证：depth clear 实际生效（用 `ThreeDSceneDemo` 验证深度测试行为）
-- [ ] 注：`WMTRenderPassDesc` 结构体字段已存在，无需新增字段
+**仍缺/待加强：**
+- ThreeDScene 的自动化断言还可补强：MRT0 alpha=1、MRT1 depth∈[0,1]、帧时阈值、P/Invoke 固定上限。
+- `MetalCommandList` ring buffer 仍不支持非空扩容；大场景需显式传更大容量或后续实现指针重定位 Grow。
 
-#### 7C. Depth/Stencil 像素格式补全
-- [ ] `MetalEnums.cs` / `bridge.h` `WMTPixelFormat` 新增 `Depth24Unorm_Stencil8 = 355`
-- [ ] `bridge.m` `pixel_format_bytes_per_pixel()` 新增该格式分支（4 bpp）
-- [ ] `MetalTexture.cs` 增加 `IsDepthFormat` 辅助属性
-- [ ] 测试：创建 `Depth32Float` 与 `Depth24Unorm_Stencil8` 纹理，验证不崩溃
+### Phase 8: ICommandRecorder 命令抽象层
 
-#### 7D. 光栅化状态 setters（5 个）
-- [ ] `bridge.h`/`bridge.m`：`setCullMode` / `setFrontFacing` / `setDepthBias` / `setDepthClipMode` / `setTriangleFillMode`
-- [ ] `MetalBridge.cs` DllImport；`MetalEnums.cs` 新增 `MTLCullMode` / `MTLWinding` / `MTLDepthClipMode` / `MTLTriangleFillMode` 枚举
-- [ ] `MetalRenderEncoder.cs` 暴露 5 个公开方法
-- [ ] **`MetalCommandList` 扩展**：`MetalCommandTypes.cs` 新增 `WMTRenderSetRasterState` 结构体（5 字段 + opcode）；`MetalCommandList.RecordSetRasterState(...)`；`bridge.m` `replay_render_cmd` 新增分支
-- [ ] 测试：`RasterStateCommandListTests` — 录制 + 回放验证
+**已完成：**
+- `ICommandRecorder` 类型化接口已定型，覆盖当前 Phase 7 能力。
+- `MetalCommandRecorder` 执行路径以 `MetalCommandList` 为主：render pass 内高频命令录入 list，`EndRenderPass()` 单次 replay。
+- `RecordingCommandRecorder` / `LoggingCommandRecorder` / `CommandReplayer` 已用于测试与调试。
+- `PipelineBuilder` 已支持 color/depth/stencil/sample/vertex descriptor/blend/label，并已有参数校验测试。
+- 装饰器透明性、Memento diff、批量回放保真、多 draw 回放测试已覆盖。
+- 当前真实边界已单独记录在 `docs/command-recorder-boundaries.md`。
 
-#### 7E. DepthStencil/StencilReference setters
-- [ ] `bridge.h`/`bridge.m`：`setDepthStencilState` / `setStencilReferenceValue`
-- [ ] `MetalBridge.cs` + `MetalRenderEncoder.cs` 方法
-- [ ] **`MetalCommandList` 扩展**：`WMTRenderSetDepthStencilState` + `WMTRenderSetStencilRef` 结构体 + Record + replay 分支
-- [ ] 测试：录制 + 回放
+**当前显式折中：**
+- `SetScissor` / `SetVertexBuffer` / `SetFragmentBuffer` / `SetFragmentTexture` 暂时直通 encoder；它们是低频路径，已在边界文档中记录。
+- `EndFrame()` 目前提交并等待完成；compute list 统一回放尚未纳入 `ICommandRecorder` 执行路径。
 
-#### 7F. VertexDescriptor
-- [ ] `bridge.h`：`WMTVertexAttributeDesc` + `WMTVertexBufferLayoutDesc` + `WMTVertexDescriptor`（InlineArray 8）；`WMTRenderPipelineDesc` 增 `vertexDescriptor` 字段
-- [ ] `bridge.m` `MTLDevice_newRenderPipelineState` 消费 `pd.vertexDescriptor`
-- [ ] `MetalTypes.cs` 镜像结构体；`MetalRenderPipelineState.cs` builder 接受 vertex descriptor
-- [ ] 测试：带 `[[attribute(0)]] position, [[attribute(1)]] color` 的顶点布局创建 PSO
+**最高优先级剩余项：**
+- 补 `ICommandRecorder_PInvokeCountConstant` 或等价性能/回放次数守护，防止 1000 draw 退回 1000 次 P/Invoke。
 
-#### 7G. Instanced Draw
-- [ ] `bridge.h`/`bridge.m`：`drawPrimitives` 增 `instanceCount`；`drawIndexedPrimitives` 增 `instanceCount`（修改现有签名，同步更新所有调用方）
-- [ ] `MetalBridge.cs` 签名更新；`MetalRenderEncoder.cs` 增 instanceCount 重载（保留旧重载默认=1）
-- [ ] **`MetalCommandList` 扩展**：`WMTRenderDraw` 增 `InstanceCount` 字段；`WMTRenderDrawIndexed` 新结构体；replay 分支调用 instanced 变体
-- [ ] 测试：`InstancedDrawTests` — 100 实例一次 draw，验证像素
+### Phase 9: 着色器编译器
 
-#### 7H. Indirect Draw
-- [ ] `bridge.h`/`bridge.m`：`drawPrimitivesIndirect` / `drawIndexedPrimitivesIndirect`
-- [ ] `MetalBridge.cs` + `MetalRenderEncoder.cs` 方法
-- [ ] **`MetalCommandList` 扩展**：`WMTRenderDrawIndirect` 结构体 + Record + replay
-- [ ] 测试：`IndirectDrawTests`
+**已完成：**
+- `AGENTS.md` 已加入 `SpirvCrossCompiler` 的 `newLibraryWithSource` 限定例外。
+- `IShaderCompiler` / `IShaderProgram` / `ShaderFormat` / `ShaderCompileOptions` 已落地。
+- `SlangCompiler` 已提炼为可复用编译器，支持 slangc→DXIL→MSC→metallib，并产出 reflection json。
+- `ShaderCache` + `CachingShaderCompiler` 两级缓存已实现并有测试。
+- `SpirvCrossCompiler` 已实现 SPIR-V→spirv-cross→MSL→`MetalDevice.NewLibraryWithSource` 路径；测试在工具缺失时跳过。
+- `MscReflection` / `MscReflectionParser` 数据模型已实现并有解析测试。
 
-#### 7I. MRT helper
-- [x] 注：`WMTRenderPassDesc.colors[8]` 与 `WMTRenderPipelineDesc.colors[8]` 已存在，无需改 bridge
-- [x] `MetalRenderPipelineState.cs` 增加 fluent builder `.WithColorAttachment(index, format)` `.WithDepth(format)`
-- [x] 验证：`ThreeDSceneDemo` 双 MRT
+**仍缺/待加强：**
+- `libspirv-cross.dylib` 依赖尚未成为必需构建依赖；当前实现依赖系统 `spirv-cross` CLI 可用性。
+- `IShaderProgram.Reflection` 当前主要通过 reflection json 字段/解析器消费，后续可统一成强类型属性。
 
-#### 7J. ThreeDSceneDemo
-- [ ] 100 个 instanced 旋转立方体，单次 `DrawIndexedPrimitives(instanceCount:100)`
-- [x] 深度测试 + 背面剔除 + 双 MRT（BGRA8 lit color + RGBA16Float normal.xy/depth/roughness）
-- [x] Blinn-Phong 方向光
-- [x] 命令经 `MetalCommandList` 批量回放（当前以 `ThreeDSceneDemo` / `ThreeDSceneWindow` + `CommandRecorderTests` 验证）
-- [ ] 断言：MRT0 alpha=1；MRT1 深度∈[0,1]；帧时 < 5ms；单帧 P/Invoke 数 ≤ 固定常数
+### Phase 10: 资源绑定层
 
----
+**已完成：**
+- 多资源 argument buffer PoC 已形成测试与 `docs/argument-buffer-layout.md`：覆盖 CBV/UAV/texture/sampler、EltOffset、vertex/fragment 差异。
+- `ArgumentBufferEncoder` 已按 MSC reflection 的 `TopLevelArgumentBuffer` 编码混合资源描述符，并返回需要 residency 的资源列表。
+- `ResourceTable` 已支持按 slot/type 绑定 buffer/texture/sampler，并通过 `ICommandRecorder` Apply 到 buffer(2)。
+- `ReflectionLoader` 已支持从输出目录加载 `*.reflect.json` 并缓存。
+- `ShaderBindingLayout` 半自动便利层已落地，并有测试。
+- Textured/MultiTexture cube demo 已开始使用 Phase 10 绑定层。
 
-### Phase 8: 命令抽象层 ICommandRecorder（重写版）
-
-> 目标：统一命令入口 + 可测试/可观测，**且执行路径走 `MetalCommandList` 批量回放**。
-
-#### 8A. 接口定型
-- [x] `Rendering/ICommandRecorder.cs` — 采用蓝图 §8.5 类型化版本（`MetalBuffer`/`MetalTexture`/`MTLCullMode`/`DrawIndirect`/`WaitForFence` 等已落地能力）
-- [x] 方法分组：管线状态 / 光栅化 / 混合 / 资源绑定 / 绘制 / Compute / 清除 / 同步 / 帧控制
-- [x] 决策：接口只覆盖 Phase 7 已实现能力，不超前声明
-
-#### 8B. MetalCommandRecorder 重写（关键修正）
-- [x] 内部持有 `MetalCommandList _renderList`（render pass 级），不直接走逐命令 `MetalBridge.*`
-- [x] 每个高频方法 → `MetalCommandList.RecordXxx(...)`
-- [x] `EndRenderPass()` → `_renderList.ReplayRender(encoder)` + `Dispose()`（单次回放）
-- [ ] `EndFrame()` → compute list 回放 + 提交
-- [x] `BeginRenderPass(WMTRenderPassDesc)` 接收结构体（修正补丁类型不匹配）
-- [x] 删除补丁 `_commands = List<IRenderCommand>` 装箱路径（执行路径零 GC）
-
-#### 8C. 可观测/捕获层（降级用途）
-- [ ] `Rendering/Commands/CommandStructs.cs` — 24 个 `readonly struct`，仅供 `RecordingCommandRecorder`
-- [x] `RecordingCommandRecorder` — 录制到内存列表（仅测试/调试），支持 `Diff` + `CommandReplayer`
-- [x] `LoggingCommandRecorder` — Decorator
-- [x] `CommandReplayer` — 跨录制器回放
-
-#### 8D. PipelineBuilder
-- [x] `Rendering/PipelineBuilder.cs` — 链式构建不可变 `PipelineDescriptor`，覆盖 vertex descriptor / color attachments / blend / depth / sample / label
-- [ ] 参数校验：缺 vertex shader 抛 `InvalidOperationException`
-- [x] `Build()` 产出 `MetalRenderPipelineState`
-
-#### 8E. 适配 Phase 7 全部新 API
-- [x] `ICommandRecorder` 暴露 7D/7E/7G/7H 全部新方法
-- [ ] `MetalCommandRecorder` 每个方法 → 对应 `MetalCommandList.RecordXxx`
-
-#### 8F. 测试
-- [ ] 装饰器透明性
-- [ ] Memento 回合
-- [x] **批量回放保真**：经 `MetalCommandList` 回放路径已由 `CommandRecorderTests` + `ThreeDSceneIntegrationTests` 覆盖
-- [ ] **性能回归**：1000 instanced draw 经 `ICommandRecorder` 的 P/Invoke 数 ≤ 固定常数
-- [ ] PipelineBuilder 参数校验
-- [ ] 迁移现有 demo（TexturedApp/InstancedTrianglesDemo/ImGuiApp）验证无回归
-
----
-
-### Phase 9: 着色器编译器（修正版）
-
-#### 9A. 放宽 AGENTS.md（前置审批）
-- [ ] §5.1 修订：禁止运行时 MSL 编译增加例外——"仅 `SpirvCrossCompiler` 路径允许 `newLibraryWithSource`；Slang 着色器仍必须预编译为 .metallib"
-- [ ] §7.1 依赖清单记录 `libspirv-cross.dylib`
-- [ ] §5.2 记录：新增 bridge 函数 `MTLDevice_newLibraryWithSource`
-
-#### 9B. IShaderCompiler 接口
-- [ ] `Shader/IShaderCompiler.cs` / `IShaderProgram.cs` / `ShaderFormat` / `ShaderCompileOptions`
-
-#### 9C. SlangCompiler（合规路径）
-- [ ] `Shader/Compilers/SlangCompiler.cs` — 提炼 `ComputeShaderDemo.cs:122-188` 子进程模式
-- [ ] slangc 增 `--output-reflection-file`；MSC 增 `--output-reflection-file`（Phase 10 前置）
-- [ ] 错误处理：stderr → `ShaderCompileException`
-- [ ] 测试：`SlangCompilerTests`
-
-#### 9D. ShaderCache（两级缓存）
-- [ ] L1 `ConcurrentDictionary<SHA256, CachedShader>`；L2 `~/.metal-rendering-engine/shader-cache/`（LRU 256MB）
-- [ ] 命中流程：L1 → L2 → 编译双写
-- [ ] 测试：首次 vs 命中（<5ms）；跨进程复用；LRU 淘汰
-
-#### 9E. SpirvCrossCompiler（需 9A 放宽）
-- [ ] 引入 `libspirv-cross.dylib`
-- [ ] `Shader/Interop/SpirvCrossBridge.cs` P/Invoke
-- [ ] `bridge.h`/`bridge.m` 新增 `MTLDevice_newLibraryWithSource`
-- [ ] `MetalBridge.cs` + `MetalDevice.NewLibraryWithSource`
-- [ ] 测试：`SpirvCrossCompilerTests`
-
-#### 9F. ShaderReflection 数据模型
-- [ ] `Shader/Reflection/ShaderReflection.cs` / `MscReflectionParser.cs`
-- [ ] `IShaderProgram.Reflection` 由 `MscReflectionParser` 填充
-- [ ] 测试：解析 `Multiply.reflect.json`，断言 UAV@buffer(2)、24 字节
-
----
-
-### Phase 10: 资源绑定层（修正版）
-
-#### 10A. 多资源 argument buffer PoC（前置，决策门）
-- [ ] 测试 shader：1 CBV + 2 UAV + 2 texture + 1 sampler
-- [ ] `MTL_SHADER_VALIDATION=1` 抓 MSC 实际绑定
-- [ ] 记录 CBV/texture/sampler 布局、EltOffset 对齐、vertex/fragment 是否共享
-- [ ] 产出 `docs/argument-buffer-layout.md`
-- [ ] **决策门**：若不稳定，回退 10E 半手动
-
-#### 10B. ArgumentBufferEncoder
-- [ ] `Binding/ArgumentBufferEncoder.cs` — 按 10A 布局序列化 `ResourceTable`
-- [ ] 扩展 `CBufferDescriptor` / `TextureDescriptor` / `SamplerDescriptor`
-- [ ] `Encode(...)` — `UseResource` + `SetBytes(argData, index:2)`
-- [ ] 测试：字节数与偏移符合 10A 规格
-
-#### 10C. ResourceTable
-- [ ] `Binding/ResourceTable.cs` — `BindBuffer/Texture/Sampler(name, resource)`；`Apply(ICommandRecorder, ShaderReflection)`
-- [ ] 两级表：PerFrame + PerMaterial
-- [ ] 测试：Apply 录制正确命令
-
-#### 10D. 编译后 MSBuild 反射生成
-- [ ] `build/targets/BindingGen.targets` — `AfterTargets="CopyGeneratedMetallibs"`
-- [ ] 读 `*.reflect.json` → 生成 `*.bindings.json` → 嵌入资源
-- [ ] `Binding/ReflectionLoader.cs` 运行时加载
-- [ ] 测试：`ReflectionLoaderTests`
-
-#### 10E. 半自动 BindingLayout（可选便利层）
-- [ ] `Binding/ShaderBindingLayout.cs` 基类
-- [ ] 手写/脚本生成 `*BindingLayout` 子类
-- [ ] 测试：`PbrShaderBindingLayout` + ResourceTable 联动
-
----
+**仍缺/待加强：**
+- 编译后 `BindingGen.targets` 生成 `*.bindings.json` 尚未完成；当前主要直接消费 `*.reflect.json`。
+- `ResourceTable.Bind*(name, ...)` 语义名绑定仍需处理 MSC 反射 name 缺失/重写问题，目前更可靠的是 slot/type 绑定或手写 BindingLayout。
 
 ### Phase 11: 引擎自洽与完善
 
-#### 11A. Shader CLI 编译工具
-- [ ] `src/MetalRenderingEngine.ShaderCompiler/` dotnet tool
-- [ ] 替代 `compile_shaders.sh` 核心逻辑
+**已完成一部分：**
+- Demo 套件已有 ThreeDScene、TexturedCube、MultiTextureCube、GpuParticle 等覆盖 7–10 的样例。
+- 单元/集成测试规模已到 125 个，并覆盖 Metal bridge、CommandList、ICommandRecorder、Shader compiler/cache/reflection、argument buffer/resource table。
 
-#### 11B. 复杂场景 Demo 套件
-- [ ] ThreeDSceneDemo（7J）/ ShaderCompilerDemo / BindingLayoutDemo / PbrDemo / ParticleDemo / ShadowDemo / BatchBenchDemo
-
-#### 11C. 性能基准套件
-- [ ] `Instanced1000_FrameTimeUnder8ms` / `Compute1M_DispatchUnder2ms` / `ShaderCacheHit_Under1ms` / `MetalCommandList_10000Draws_Under50us_Encoding` / `ICommandRecorder_PInvokeCountConstant`（新增，守护 Phase 6/8）
-
-#### 11D. 整体集成测试
-- [ ] `PbrPipeline_EndToEnd_RendersNonBlackPixels`
-- [ ] 多帧稳定性（1000 帧无崩溃）
-- [ ] 回归：现有 demo 经 ICommandRecorder 无行为变化
-
-#### 11E. 文档与 AGENTS.md 更新
-- [ ] AGENTS.md §10 变更记录；§5.1/§7.1 反映 9A 放宽
+**下一批优先项：**
+1. 性能回归守护：`ICommandRecorder_PInvokeCountConstant` / `Instanced1000` / `MetalCommandList_10000Draws`。
+2. 整理当前未提交 demo/test 文件，确认是否纳入 Phase 10 正式成果。
+3. Shader CLI 工具与 BindingGen MSBuild pass。
+4. PBR/Shadow/BatchBench 等更完整 demo。
 
 ---
 

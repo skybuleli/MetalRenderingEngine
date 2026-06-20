@@ -13,6 +13,7 @@
     <GeneratedShaderDir>$(CompilerGeneratedFilesOutputPath)/MetalRenderingEngine.ShaderGen/MetalRenderingEngine.ShaderGen.ShaderGenerator</GeneratedShaderDir>
     <ShaderOutputDir>$(IntermediateOutputPath)shaders</ShaderOutputDir>
     <CompileGeneratedShadersScript>$(MSBuildThisFileDirectory)../compile_generated_shaders.sh</CompileGeneratedShadersScript>
+    <GenerateBindingsScript>$(MSBuildThisFileDirectory)../generate_bindings.py</GenerateBindingsScript>
   </PropertyGroup>
 
   <!-- 编译生成着色器，在 CoreCompile 之后运行（源生成器此时已输出 .Slang.g.cs） -->
@@ -25,16 +26,33 @@
           StandardOutputImportance="high" />
   </Target>
 
-  <!-- 将 metallib 复制到输出目录 -->
-  <Target Name="CopyGeneratedMetallibs"
+  <!-- 从 reflect.json 提炼运行时 bindings.json -->
+  <Target Name="GenerateBindingMetadata"
           AfterTargets="CompileGeneratedShaders"
+          Condition="Exists('$(ShaderOutputDir)')">
+
+    <Exec Command="python3 '$(GenerateBindingsScript)' '$(ShaderOutputDir)'"
+          StandardOutputImportance="high" />
+  </Target>
+
+  <!-- 将 metallib 与 reflect.json 复制到输出目录（Phase 10D: 反射供 ReflectionLoader 运行时加载） -->
+  <Target Name="CopyGeneratedMetallibs"
+          AfterTargets="GenerateBindingMetadata"
           Condition="Exists('$(ShaderOutputDir)')">
 
     <ItemGroup>
       <_GenMetallib Include="$(ShaderOutputDir)/*.generated.metallib" />
+      <_GenReflection Include="$(ShaderOutputDir)/*.generated.reflect.json" />
+      <_GenBindings Include="$(ShaderOutputDir)/*.generated.bindings.json" />
     </ItemGroup>
 
     <Copy SourceFiles="@(_GenMetallib)"
+          DestinationFolder="$(OutDir)shaders"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_GenReflection)"
+          DestinationFolder="$(OutDir)shaders"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_GenBindings)"
           DestinationFolder="$(OutDir)shaders"
           SkipUnchangedFiles="true" />
   </Target>

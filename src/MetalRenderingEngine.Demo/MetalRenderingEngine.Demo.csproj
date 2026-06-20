@@ -14,12 +14,20 @@
 
   <Import Project="$(MSBuildThisFileDirectory)../../build/targets/MetalShaders.targets" />
   
-    <!-- 将由 compile_shaders.sh 编译的 .metallib 复制到输出目录 -->
+    <!-- 将由 compile_shaders.sh 编译的 .metallib 与 .reflect.json 复制到输出目录（Phase 10D: 反射供 ReflectionLoader 加载） -->
     <Target Name="CopyManualShaders" AfterTargets="AfterBuild">
       <ItemGroup>
         <_ManualMetallib Include="$(MSBuildThisFileDirectory)../../out/shaders/*.metallib" />
+        <_ManualReflection Include="$(MSBuildThisFileDirectory)../../out/shaders/*.reflect.json" />
+        <_ManualBindings Include="$(MSBuildThisFileDirectory)../../out/shaders/*.bindings.json" />
       </ItemGroup>
       <Copy SourceFiles="@(_ManualMetallib)"
+            DestinationFolder="$(OutDir)shaders"
+            SkipUnchangedFiles="true" />
+      <Copy SourceFiles="@(_ManualReflection)"
+            DestinationFolder="$(OutDir)shaders"
+            SkipUnchangedFiles="true" />
+      <Copy SourceFiles="@(_ManualBindings)"
             DestinationFolder="$(OutDir)shaders"
             SkipUnchangedFiles="true" />
     </Target>
