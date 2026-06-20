@@ -238,4 +238,61 @@ public class CommandRecorderTests
         recorder.EndRenderPass();
         recorder.EndFrame();
     }
+
+    /// <summary>
+    /// 性能回归守护：1000 次 Draw 必须只在 MetalCommandList 中累积，
+    /// EndRenderPass 时一次 replay；录制阶段不能退回逐命令提交/清空。
+    /// </summary>
+    [Fact]
+    public void MetalCommandRecorder_1000Draws_CommandCountRemainsLinearUntilSingleReplay()
+    {
+        Assert.True(File.Exists(TriangleVertPath));
+        Assert.True(File.Exists(TriangleFragPath));
+
+        using var device = MetalDevice.CreateSystemDefault();
+        using var vertLib = device.NewLibrary(File.ReadAllBytes(TriangleVertPath));
+        using var fragLib = device.NewLibrary(File.ReadAllBytes(TriangleFragPath));
+        using var vertFn = vertLib.NewFunction("main");
+        using var fragFn = fragLib.NewFunction("main");
+
+        var pipeDesc = new PipelineBuilder()
+            .WithColorAttachment(0, MTLPixelFormat.BGRA8Unorm)
+            .WithSampleCount(1)
+            .BuildDescriptor();
+        using var pso = device.NewRenderPipelineState(vertFn, fragFn, pipeDesc);
+
+        var colorInfo = new WMTTextureInfo
+        {
+            PixelFormat = (int)MTLPixelFormat.BGRA8Unorm,
+            TextureType = (int)MTLTextureType.Type2D,
+            Width = 64, Height = 64, Depth = 1,
+            MipmapLevels = 1, SampleCount = 1,
+            Usage = (int)MTLTextureUsage.RenderTarget,
+            Options = (int)MTLResourceOptions.StorageModeShared,
+        };
+        using var colorTex = device.NewTexture(colorInfo);
+
+        var passDesc = new WMTRenderPassDesc();
+        passDesc.SetColorAt(0, new WMTRenderPassAttachment
+        {
+            Texture = colorTex.Handle,
+            LoadAction = (int)MTLLoadAction.Clear,
+            StoreAction = (int)MTLStoreAction.Store,
+            ClearColor = new WMTClearColor(0, 0, 0, 1),
+        });
+
+        using ICommandRecorder recorder = new MetalCommandRecorder(device);
+        recorder.BeginFrame();
+        recorder.BeginRenderPass(passDesc);
+        recorder.SetPipelineState(pso);
+        recorder.SetViewport(0, 0, 64, 64, 0, 1);
+
+        for (int i = 0; i < 1000; i++)
+            recorder.Draw(0, 0, 3, 1);
+
+        // 2 条状态命令 + 1000 条 draw 全部仍处于同一批次中，等待 EndRenderPass 单次回放。
+        Assert.Equal(1002, recorder.CommandCount);
+        recorder.EndRenderPass();
+        recorder.EndFrame();
+    }
 }
