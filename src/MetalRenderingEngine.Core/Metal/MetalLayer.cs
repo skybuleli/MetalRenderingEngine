@@ -21,6 +21,14 @@ public sealed class MetalLayer : MetalObject
     public void SetDrawableSize(float width, float height)
         => MetalBridge.CAMetalLayer_setDrawableSize(Handle, width, height);
 
+    /// <summary>启用/禁用显示同步（VSync），macOS 14+。</summary>
+    public void SetDisplaySyncEnabled(bool enabled)
+        => MetalBridge.CAMetalLayer_setDisplaySyncEnabled(Handle, enabled ? 1 : 0);
+
+    /// <summary>设置最大 drawable 数量（triple-buffer 默认为 3，范围 1-3）。</summary>
+    public void SetMaximumDrawableCount(int count)
+        => MetalBridge.CAMetalLayer_setMaximumDrawableCount(Handle, count);
+
     public MetalDrawable? NextDrawable()
     {
         nuint h = MetalBridge.CAMetalLayer_nextDrawable(Handle);

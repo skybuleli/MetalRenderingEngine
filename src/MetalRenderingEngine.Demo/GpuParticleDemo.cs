@@ -412,6 +412,9 @@ float4 frag_main(VSOut input) : SV_Target0
         layer.SetDevice(device);
         layer.SetPixelFormat(MTLPixelFormat.BGRA8Unorm);
         layer.SetDrawableSize(W, H);
+        using var sync = new FrameSync(device);
+        layer.SetDisplaySyncEnabled(true);
+        layer.SetMaximumDrawableCount(sync.InFlightFrames);
 
         var ctx = ImGui.CreateContext();
         ImGui.SetCurrentContext(ctx);
@@ -460,8 +463,11 @@ float4 frag_main(VSOut input) : SV_Target0
                 layer.SetDrawableSize(displayW, displayH);
             }
 
+            // WaitFrame 在帧首阻塞直到最旧帧 GPU 完成（triple-buffer 帧限速）
+            sync.WaitFrame();
+
             var drawable = layer.NextDrawable();
-            if (drawable == null) { Thread.Sleep(8); continue; }
+            if (drawable == null) { Thread.Sleep(1); continue; }
 
             long curTicks = stopwatch2.ElapsedTicks;
             float dt = (float)(curTicks - lastFrameTicks) / Stopwatch.Frequency;
@@ -598,6 +604,7 @@ float4 frag_main(VSOut input) : SV_Target0
                 uiEnc.EndEncoding();
                 uiEnc.Dispose();
 
+                sync.SignalFrame(cmdbuf);
                 cmdbuf.PresentDrawable(drawable);
                 cmdbuf.Commit();
             }
@@ -621,7 +628,6 @@ float4 frag_main(VSOut input) : SV_Target0
 
             if (frame % 120 == 0)
                 Console.WriteLine($"  frame {frame}: {activeCount} particles, {fps:F1} FPS, {frameMs:F1}ms");
-            Thread.Sleep(8);
         }
 
         ImGuiImplMetal.Shutdown();

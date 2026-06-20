@@ -214,6 +214,12 @@ internal static partial class MetalBridge
     [LibraryImport(LibraryName, EntryPoint = "CAMetalLayer_setDrawableSize")]
     public static partial void CAMetalLayer_setDrawableSize(nuint layer, float width, float height);
 
+    [LibraryImport(LibraryName, EntryPoint = "CAMetalLayer_setDisplaySyncEnabled")]
+    public static partial void CAMetalLayer_setDisplaySyncEnabled(nuint layer, int enabled);
+
+    [LibraryImport(LibraryName, EntryPoint = "CAMetalLayer_setMaximumDrawableCount")]
+    public static partial void CAMetalLayer_setMaximumDrawableCount(nuint layer, int count);
+
     [LibraryImport(LibraryName, EntryPoint = "CAMetalLayer_nextDrawable")]
     public static partial nuint CAMetalLayer_nextDrawable(nuint layer);
 

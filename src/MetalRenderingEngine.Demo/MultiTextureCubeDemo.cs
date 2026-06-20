@@ -109,14 +109,19 @@ internal static class MultiTextureCubeDemo
         // ── 9. 渲染循环 ─
         var camera = new Camera(MathF.PI / 4f, (float)W / H, 0.1f, 100f);
         using ICommandRecorder recorder = new MetalCommandRecorder(device);
+        using var sync = new FrameSync(device);
         long start = Environment.TickCount64;
         int frame = 0;
+
+        layer.SetDisplaySyncEnabled(true);
+        layer.SetMaximumDrawableCount(sync.InFlightFrames);
 
         while (true)
         {
             if (window.PollShouldClose()) break;
+            sync.WaitFrame();
             var drawable = layer.NextDrawable();
-            if (drawable == null) { Thread.Sleep(8); continue; }
+            if (drawable == null) { Thread.Sleep(1); continue; }
             using (drawable)
             {
                 float t = (Environment.TickCount64 - start) / 1000f;
@@ -146,6 +151,7 @@ internal static class MultiTextureCubeDemo
                 recorder.Draw(0, 0, 36, 1);
                 recorder.EndRenderPass();
 
+                sync.SignalFrame(((MetalCommandRecorder)recorder).CommandBuffer);
                 ((MetalCommandRecorder)recorder).PresentDrawable(drawable);
                 ((MetalCommandRecorder)recorder).Submit();
             }
@@ -154,7 +160,6 @@ internal static class MultiTextureCubeDemo
                 Console.WriteLine($"  frame {frame} ({recorder.CommandCount} cmds)");
                 Console.Out.Flush();
             }
-            Thread.Sleep(16);
         }
         Console.WriteLine($"✅ {frame} frames, multi-texture cube (4 resources via ShaderBindingLayout)");
         return 0;

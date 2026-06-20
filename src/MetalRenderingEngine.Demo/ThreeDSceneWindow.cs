@@ -82,14 +82,19 @@ internal static class ThreeDSceneWindow
         // 渲染循环（通过 ICommandRecorder 接口，内部走 MetalCommandList 批量回放）
         var camera = new Camera(MathF.PI / 4f, (float)W / H, 0.1f, 100f);
         using ICommandRecorder recorder = new MetalCommandRecorder(device);
+        using var sync = new FrameSync(device);
         long start = Environment.TickCount64;
         int frame = 0;
+
+        layer.SetDisplaySyncEnabled(true);
+        layer.SetMaximumDrawableCount(sync.InFlightFrames);
 
         while (true)
         {
             if (window.PollShouldClose()) break;
+            sync.WaitFrame();
             var drawable = layer.NextDrawable();
-            if (drawable == null) { Thread.Sleep(8); continue; }
+            if (drawable == null) { Thread.Sleep(1); continue; }
             using (drawable)
             {
                 float t = (Environment.TickCount64 - start) / 1000f;
@@ -139,11 +144,11 @@ internal static class ThreeDSceneWindow
                 recorder.Draw(0, 0, 36, InstanceCount);
                 recorder.EndRenderPass();
 
+                sync.SignalFrame(((MetalCommandRecorder)recorder).CommandBuffer);
                 ((MetalCommandRecorder)recorder).PresentDrawable(drawable);
                 ((MetalCommandRecorder)recorder).Submit();
             }
             if (++frame % 60 == 0) { Console.WriteLine($"  frame {frame} ({recorder.CommandCount} cmds)"); Console.Out.Flush(); }
-            Thread.Sleep(16);
         }
         Console.WriteLine($"✅ {frame} frames, {InstanceCount} instanced cubes, {SampleCount}x MSAA");
         return 0;

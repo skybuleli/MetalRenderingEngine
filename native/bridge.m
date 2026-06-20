@@ -617,6 +617,20 @@ void CAMetalLayer_setDrawableSize(mtl_handle_t layer, float width, float height)
     ml.drawableSize = CGSizeMake(width, height);
 }
 
+void CAMetalLayer_setDisplaySyncEnabled(mtl_handle_t layer, int enabled) {
+    if (layer == MTL_NULL_HANDLE) return;
+    CAMetalLayer *ml = H2ID(layer);
+    if (@available(macOS 14.0, *)) {
+        ml.displaySyncEnabled = (enabled != 0);
+    }
+}
+
+void CAMetalLayer_setMaximumDrawableCount(mtl_handle_t layer, int count) {
+    if (layer == MTL_NULL_HANDLE) return;
+    CAMetalLayer *ml = H2ID(layer);
+    ml.maximumDrawableCount = (NSUInteger)count;
+}
+
 mtl_handle_t CAMetalLayer_nextDrawable(mtl_handle_t layer) {
     if (layer == MTL_NULL_HANDLE) return MTL_NULL_HANDLE;
     CAMetalLayer *ml = H2ID(layer);

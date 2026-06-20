@@ -28,7 +28,9 @@ internal static class Program
             if (mode == "particles") return GpuParticleDemo.Run();
             if (mode == "textured-cube") return TexturedCubeDemo.Run();
             if (mode == "multi-tex-cube") return MultiTextureCubeDemo.Run();
-            Console.Error.WriteLine("Usage: dotnet run -- [compute|compute-gen|mandelbrot|triangle|textured|imgui|instanced|fence-bench|threed|threed-win|particles|textured-cube|multi-tex-cube]");
+            if (mode == "rendergraph") return RenderGraphDemo.Run();
+            if (mode == "rendergraph-win") return RenderGraphWindow.Run();
+            Console.Error.WriteLine("Usage: dotnet run -- [compute|compute-gen|mandelbrot|triangle|textured|imgui|instanced|fence-bench|threed|threed-win|particles|textured-cube|multi-tex-cube|rendergraph|rendergraph-win]");
             return 1;
         }
         catch (MetalException ex)

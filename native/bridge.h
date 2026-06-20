@@ -435,6 +435,10 @@ mtl_handle_t Cocoa_CreateMetalWindow(const char *title, float width, float heigh
 void CAMetalLayer_setDevice(mtl_handle_t layer, mtl_handle_t device);
 void CAMetalLayer_setPixelFormat(mtl_handle_t layer, int pixel_format);
 void CAMetalLayer_setDrawableSize(mtl_handle_t layer, float width, float height);
+/* 启用/禁用显示同步（VSync），macOS 14+ */
+void CAMetalLayer_setDisplaySyncEnabled(mtl_handle_t layer, int enabled);
+/* 设置最大 drawable 数量（triple-buffer 默认为 3） */
+void CAMetalLayer_setMaximumDrawableCount(mtl_handle_t layer, int count);
 
 /* 获取下一帧可呈现的 drawable */
 mtl_handle_t CAMetalLayer_nextDrawable(mtl_handle_t layer);
