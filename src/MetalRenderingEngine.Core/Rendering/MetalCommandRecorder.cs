@@ -27,6 +27,9 @@ public sealed class MetalCommandRecorder : ICommandRecorder
     /// <summary>已录制的命令数（用于可观测性）。</summary>
     public int CommandCount { get; private set; }
 
+    /// <summary>最近一次 render pass 触发的 MetalCommandList replay 次数（测试/性能回归守护用）。</summary>
+    internal int LastRenderReplayCallCount { get; private set; }
+
     public MetalCommandRecorder(MetalDevice device)
     {
         _device = device;
@@ -50,6 +53,7 @@ public sealed class MetalCommandRecorder : ICommandRecorder
     {
         _commandBuffer = _queue.CommandBuffer();
         CommandCount = 0;
+        LastRenderReplayCallCount = 0;
     }
 
     public void EndFrame()
@@ -94,6 +98,7 @@ public sealed class MetalCommandRecorder : ICommandRecorder
 
         // 单次 P/Invoke 回放全部批量命令
         _renderList.ReplayRender(_renderEncoder);
+        LastRenderReplayCallCount = _renderList.RenderReplayCallCount;
         _renderList.Dispose();
         _renderList = null;
 
