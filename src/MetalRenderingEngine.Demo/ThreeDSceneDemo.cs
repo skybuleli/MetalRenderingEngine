@@ -14,6 +14,9 @@ namespace MetalRenderingEngine.Demo;
 /// 命令录制走 ICommandRecorder/MetalCommandList，验证批量回放路径不改变像素结果。
 ///
 /// 运行：dotnet run --project src/MetalRenderingEngine.Demo -- threed
+/// <para><b>绑定路径</b>：本 Demo 使用 StructuredBuffer + 手工 UavDescriptor argument buffer
+/// （Phase 7-9 遗留路径）。新开发请使用 ResourceTable / ShaderBindingLayout
+/// （Phase 10 描述符堆路径），参考 <see cref="TexturedCubeDemo"/>。</para>
 /// </summary>
 internal static class ThreeDSceneDemo
 {

@@ -31,7 +31,7 @@
           AfterTargets="CompileGeneratedShaders"
           Condition="Exists('$(ShaderOutputDir)')">
 
-    <Exec Command="python3 '$(GenerateBindingsScript)' '$(ShaderOutputDir)'"
+    <Exec Command="python3 '$(GenerateBindingsScript)' --emit-cs '$(ShaderOutputDir)'"
           StandardOutputImportance="high" />
   </Target>
 
@@ -44,6 +44,7 @@
       <_GenMetallib Include="$(ShaderOutputDir)/*.generated.metallib" />
       <_GenReflection Include="$(ShaderOutputDir)/*.generated.reflect.json" />
       <_GenBindings Include="$(ShaderOutputDir)/*.generated.bindings.json" />
+      <_GenBindingLayouts Include="$(ShaderOutputDir)/*.BindingLayout.g.cs" />
     </ItemGroup>
 
     <Copy SourceFiles="@(_GenMetallib)"
@@ -53,6 +54,9 @@
           DestinationFolder="$(OutDir)shaders"
           SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_GenBindings)"
+          DestinationFolder="$(OutDir)shaders"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_GenBindingLayouts)"
           DestinationFolder="$(OutDir)shaders"
           SkipUnchangedFiles="true" />
   </Target>

@@ -69,6 +69,26 @@ public sealed class UseResourceCommand : RecordedCommand
     public override void AppendLog(StringBuilder sb) => sb.AppendLine($"  UseResource(handle={Handle},usage={Usage})");
 }
 
+/// <summary>Span / typed bytes 命令记录（拷贝 payload 数据，可安全回放）。</summary>
+public sealed class SetBytesCommand : RecordedCommand
+{
+    public byte[] Data { get; }
+    public ulong Index { get; }
+    public bool IsFragment { get; }
+
+    public SetBytesCommand(ReadOnlySpan<byte> data, ulong index, bool isFragment)
+    {
+        Data = data.ToArray();
+        Index = index;
+        IsFragment = isFragment;
+    }
+
+    public override string Name => IsFragment ? "SetFragmentBytes" : "SetVertexBytes";
+
+    public override void AppendLog(StringBuilder sb)
+        => sb.AppendLine($"  {Name}(len={Data.Length}, index={Index})");
+}
+
 /// <summary>
 /// Phase 8C: Memento 模式录制器。
 /// 将命令捕获到内存列表（不执行），用于测试/调试/golden-frame 对比。
@@ -139,11 +159,23 @@ public sealed class RecordingCommandRecorder : ICommandRecorder
     public void SetDepthStencilState(MetalDepthStencilState state) => Capture(new SetDepthStencilStateCommand(state.Handle));
     public void SetStencilReference(uint front, uint back) { /* 不捕获 */ }
 
-    public void SetVertexBytes<T>(in T value, ulong index) where T : unmanaged { /* 不捕获 */ }
-    public void SetVertexBytes(ReadOnlySpan<byte> data, ulong index) { /* 不捕获 */ }
+    public unsafe void SetVertexBytes<T>(in T value, ulong index) where T : unmanaged
+    {
+        fixed (T* p = &value)
+            Capture(new SetBytesCommand(new ReadOnlySpan<byte>(p, sizeof(T)), index, isFragment: false));
+    }
+
+    public void SetVertexBytes(ReadOnlySpan<byte> data, ulong index)
+        => Capture(new SetBytesCommand(data, index, isFragment: false));
     public void SetVertexBuffer(MetalBuffer buffer, ulong offset, ulong index) { /* 不捕获 */ }
-    public void SetFragmentBytes<T>(in T value, ulong index) where T : unmanaged { /* 不捕获 */ }
-    public void SetFragmentBytes(ReadOnlySpan<byte> data, ulong index) { /* 不捕获 */ }
+    public unsafe void SetFragmentBytes<T>(in T value, ulong index) where T : unmanaged
+    {
+        fixed (T* p = &value)
+            Capture(new SetBytesCommand(new ReadOnlySpan<byte>(p, sizeof(T)), index, isFragment: true));
+    }
+
+    public void SetFragmentBytes(ReadOnlySpan<byte> data, ulong index)
+        => Capture(new SetBytesCommand(data, index, isFragment: true));
     public void SetFragmentBuffer(MetalBuffer buffer, ulong offset, ulong index) { /* 不捕获 */ }
     public void SetFragmentTexture(MetalTexture texture, ulong index) { /* 不捕获 */ }
     public void UseResource(MetalObject resource, MTLResourceUsage usage, MTLRenderStages stages) => Capture(new UseResourceCommand(resource.Handle, usage, stages));
@@ -177,6 +209,10 @@ public static class CommandReplayer
                 case SetCullModeCommand c: target.SetCullMode(c.Mode); break;
                 case SetDepthStencilStateCommand c: target.SetDepthStencilState(new MetalDepthStencilState(c.Handle)); break;
                 case UseResourceCommand c: target.UseResource(new MetalBuffer(c.Handle, 0), c.Usage, c.Stages); break;
+                case SetBytesCommand c:
+                    if (c.IsFragment) target.SetFragmentBytes(c.Data, c.Index);
+                    else target.SetVertexBytes(c.Data, c.Index);
+                    break;
                 case DrawCommand c: target.Draw(c.PrimitiveType, c.VertexStart, c.VertexCount, c.InstanceCount); break;
             }
         }

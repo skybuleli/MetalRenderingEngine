@@ -54,6 +54,8 @@ public sealed class FrameSync : IDisposable
             catch { ok = false; break; }
         }
         _useSharedEvent = ok;
+        if (!_useSharedEvent)
+            Console.WriteLine("[FrameSync] MTLSharedEvent 不可用，降级为 WaitUntilCompleted（每帧阻塞，无流水线加速）。");
     }
 
     /// <summary>是否使用 MTLSharedEvent（false = 降级为阻塞等待）。</summary>

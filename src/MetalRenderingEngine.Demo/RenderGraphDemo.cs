@@ -15,6 +15,11 @@ namespace MetalRenderingEngine.Demo;
 ///
 /// 故意以 Final → ShadowMap → GBuffer 的乱序声明，验证排序正确。
 /// 运行：dotnet run --project src/MetalRenderingEngine.Demo -- rendergraph
+/// <para><b>绑定路径说明</b>：本 Demo 使用 ThreeDScene shader 的旧 StructuredBuffer 绑定路径
+/// （手工 UavDescriptor argument buffer）。新的 Texture2D+SamplerState 描述符堆路径由
+/// <see cref="TexturedCubeDemo"/> / <see cref="MultiTextureCubeDemo"/> 演示。
+/// RenderGraph 与 ResourceTable 架构上兼容——在 <c>.Record()</c> 回调内调用
+/// <c>bindingLayout.Apply(recorder)</c> 即可，参见 TexturedCubeDemo 的用法。</para>
 /// </summary>
 internal static class RenderGraphDemo
 {

@@ -17,6 +17,18 @@ public class CommandRecorderTests
     private static string TriangleFragPath
         => Path.Combine(AppContext.BaseDirectory, "shaders", "Triangle.frag.metallib");
 
+    private readonly struct BytesPayload
+    {
+        public readonly int A;
+        public readonly int B;
+
+        public BytesPayload(int a, int b)
+        {
+            A = a;
+            B = b;
+        }
+    }
+
     /// <summary>
     /// LoggingCommandRecorder 包裹 RecordingCommandRecorder，调用应穿透到内部。
     /// 验证装饰器透明性：日志写入 + 命令捕获。
@@ -83,6 +95,26 @@ public class CommandRecorderTests
         var diffs = a.Diff(b);
         Assert.NotEmpty(diffs);
         Assert.Equal(2, diffs.Count);  // 两条命令都不同
+    }
+
+    /// <summary>
+    /// RecordingCommandRecorder 应捕获 typed / span 版 SetBytes，并保留可回放 payload。
+    /// </summary>
+    [Fact]
+    public void RecordingRecorder_CapturesTypedAndSpanBytes()
+    {
+        var recorder = new RecordingCommandRecorder();
+        var typed = new BytesPayload(1, 2);
+        byte[] spanBytes = { 3, 4, 5, 6 };
+
+        recorder.SetVertexBytes(in typed, 2);
+        recorder.SetFragmentBytes(spanBytes, 2);
+
+        Assert.Equal(2, recorder.CommandCount);
+        Assert.Equal("SetVertexBytes", recorder.Commands[0].Name);
+        Assert.Equal("SetFragmentBytes", recorder.Commands[1].Name);
+        Assert.Contains("SetVertexBytes(len=", recorder.GetCommandLog());
+        Assert.Contains("SetFragmentBytes(len=4", recorder.GetCommandLog());
     }
 
     /// <summary>
