@@ -116,4 +116,28 @@ public class ReflectionLoaderTests
         Assert.Equal(withoutSuffix.ResourceCount, withSuffix.ResourceCount);
         Assert.Equal(withoutSuffix.ShaderType, withSuffix.ShaderType);
     }
+
+    /// <summary>加载编译后生成的 bindings.json，验证它与 reflect.json 的关键布局一致。</summary>
+    [Fact]
+    public void LoadBindings_PrecompiledMultiply_ReturnsStableMetadata()
+    {
+        ReflectionLoader.ClearCache();
+
+        var reflection = ReflectionLoader.Load("Multiply");
+        var bindings = ReflectionLoader.LoadBindings("Multiply");
+
+        Assert.Equal(1, bindings.Version);
+        Assert.Equal("Multiply", bindings.Shader);
+        Assert.Equal(reflection.ShaderType, bindings.Stage);
+        Assert.Equal(ResourceTable.ArgumentBufferBindPoint, bindings.ArgumentBufferBindPoint);
+        Assert.Single(bindings.Resources);
+
+        var reflected = reflection.TopLevelArgumentBuffer[0];
+        var resource = bindings.Resources[0];
+        Assert.Equal(reflected.ResourceType, resource.ResourceType);
+        Assert.Equal(reflected.Slot, resource.Slot);
+        Assert.Equal(reflected.Space, resource.Space);
+        Assert.Equal(reflected.EltOffset, resource.Offset);
+        Assert.Equal(reflected.Size, resource.Size);
+    }
 }

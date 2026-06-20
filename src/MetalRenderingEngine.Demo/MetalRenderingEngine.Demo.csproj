@@ -19,11 +19,15 @@
       <ItemGroup>
         <_ManualMetallib Include="$(MSBuildThisFileDirectory)../../out/shaders/*.metallib" />
         <_ManualReflection Include="$(MSBuildThisFileDirectory)../../out/shaders/*.reflect.json" />
+        <_ManualBindings Include="$(MSBuildThisFileDirectory)../../out/shaders/*.bindings.json" />
       </ItemGroup>
       <Copy SourceFiles="@(_ManualMetallib)"
             DestinationFolder="$(OutDir)shaders"
             SkipUnchangedFiles="true" />
       <Copy SourceFiles="@(_ManualReflection)"
+            DestinationFolder="$(OutDir)shaders"
+            SkipUnchangedFiles="true" />
+      <Copy SourceFiles="@(_ManualBindings)"
             DestinationFolder="$(OutDir)shaders"
             SkipUnchangedFiles="true" />
     </Target>

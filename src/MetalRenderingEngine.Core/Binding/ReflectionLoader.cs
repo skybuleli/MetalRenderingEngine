@@ -18,13 +18,22 @@ public static class ReflectionLoader
 {
     private static readonly ConcurrentDictionary<string, MscReflection> s_cache
         = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, BindingMetadata> s_bindingCache
+        = new(StringComparer.Ordinal);
 
     private static string GetReflectName(string name)
         => name.EndsWith(".reflect.json", StringComparison.OrdinalIgnoreCase)
             ? name : name + ".reflect.json";
 
+    private static string GetBindingName(string name)
+        => name.EndsWith(".bindings.json", StringComparison.OrdinalIgnoreCase)
+            ? name : name + ".bindings.json";
+
     private static string ResolvePath(string name)
         => Path.Combine(AppContext.BaseDirectory, "shaders", GetReflectName(name));
+
+    private static string ResolveBindingPath(string name)
+        => Path.Combine(AppContext.BaseDirectory, "shaders", GetBindingName(name));
 
     /// <summary>
     /// 加载 <c>shaders/&lt;name&gt;.reflect.json</c> 并返回 <see cref="MscReflection"/>。
@@ -58,8 +67,38 @@ public static class ReflectionLoader
         return reflection;
     }
 
+    /// <summary>
+    /// 加载 <c>shaders/&lt;name&gt;.bindings.json</c> 并返回绑定元数据。
+    /// bindings.json 是编译后从 MSC reflection 提炼出的稳定运行时绑定表。
+    /// </summary>
+    public static BindingMetadata LoadBindings(string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        return s_bindingCache.GetOrAdd(name, LoadBindingsFromDisk);
+    }
+
+    /// <summary>尝试加载绑定元数据，找不到文件返回 null。</summary>
+    public static BindingMetadata? TryLoadBindings(string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        if (s_bindingCache.TryGetValue(name, out var cached))
+            return cached;
+
+        string path = ResolveBindingPath(name);
+        if (!File.Exists(path))
+            return null;
+
+        var metadata = BindingMetadataParser.Parse(File.ReadAllBytes(path));
+        s_bindingCache[name] = metadata;
+        return metadata;
+    }
+
     /// <summary>清空反射缓存。</summary>
-    public static void ClearCache() => s_cache.Clear();
+    public static void ClearCache()
+    {
+        s_cache.Clear();
+        s_bindingCache.Clear();
+    }
 
     private static MscReflection LoadFromDisk(string name)
     {
@@ -67,5 +106,13 @@ public static class ReflectionLoader
         if (!File.Exists(path))
             throw new FileNotFoundException($"反射文件不存在：{path}", path);
         return MscReflectionParser.Parse(File.ReadAllBytes(path));
+    }
+
+    private static BindingMetadata LoadBindingsFromDisk(string name)
+    {
+        string path = ResolveBindingPath(name);
+        if (!File.Exists(path))
+            throw new FileNotFoundException($"绑定元数据文件不存在：{path}", path);
+        return BindingMetadataParser.Parse(File.ReadAllBytes(path));
     }
 }

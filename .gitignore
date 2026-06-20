@@ -10,6 +10,7 @@ obj/
 *.dxil
 *.generated.slang
 *.reflect.json
+*.bindings.json
 
 # ===== .NET 中间产物 =====
 *.user

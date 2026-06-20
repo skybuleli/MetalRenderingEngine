@@ -57,4 +57,6 @@ if [ "$found" -eq 0 ]; then
     exit 1
 fi
 
+python3 "$REPO_ROOT/build/generate_bindings.py" "$OUT_DIR"
+
 echo "[shader] Done. $found shader(s) compiled."

@@ -31,6 +31,11 @@
       <Link>shaders/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- Phase 10D: 编译后绑定元数据供 ReflectionLoader.LoadBindings 使用 -->
+    <Content Include="$(MSBuildThisFileDirectory)../../out/shaders/*.bindings.json">
+      <Link>shaders/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>
