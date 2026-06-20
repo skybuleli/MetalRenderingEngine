@@ -23,6 +23,8 @@ public sealed unsafe class MetalCommandList : IDisposable
     private WMTCommandBase* _head;     // 链表头（第一条命令）
     private WMTCommandBase* _tail;     // 链表尾（用于挂新命令时更新其 Next）
     private const int DefaultCapacity = 64 * 1024;
+    private static int s_renderReplayCallCount;
+    private static int s_computeReplayCallCount;
 
     public MetalCommandList() : this(DefaultCapacity) { }
 
@@ -38,6 +40,19 @@ public sealed unsafe class MetalCommandList : IDisposable
 
     /// <summary>ring buffer 已用字节数。</summary>
     public int BytesUsed => _writeOffset;
+
+    /// <summary>进程内 render replay 调用次数（测试/性能回归守护用）。</summary>
+    internal static int RenderReplayCallCount => s_renderReplayCallCount;
+
+    /// <summary>进程内 compute replay 调用次数（测试/性能回归守护用）。</summary>
+    internal static int ComputeReplayCallCount => s_computeReplayCallCount;
+
+    /// <summary>重置 replay 计数器（测试/性能回归守护用）。</summary>
+    internal static void ResetReplayCounters()
+    {
+        s_renderReplayCallCount = 0;
+        s_computeReplayCallCount = 0;
+    }
 
     // ── 内部：在 ring buffer 里分配 n 字节并返回指针 ──────────────
     private unsafe byte* Alloc(int size)
@@ -344,6 +359,7 @@ public sealed unsafe class MetalCommandList : IDisposable
     public unsafe void ReplayCompute(MetalComputeCommandEncoder encoder)
     {
         if (_head == null) return;
+        Interlocked.Increment(ref s_computeReplayCallCount);
         MetalBridge.MTLComputeCommandEncoder_encodeCommands(encoder.Handle, _head);
         Clear();
     }
@@ -352,6 +368,7 @@ public sealed unsafe class MetalCommandList : IDisposable
     public unsafe void ReplayRender(MetalRenderEncoder encoder)
     {
         if (_head == null) return;
+        Interlocked.Increment(ref s_renderReplayCallCount);
         MetalBridge.MTLRenderCommandEncoder_encodeCommands(encoder.Handle, _head);
         Clear();
     }

@@ -248,6 +248,7 @@ public class CommandRecorderTests
     {
         Assert.True(File.Exists(TriangleVertPath));
         Assert.True(File.Exists(TriangleFragPath));
+        MetalCommandList.ResetReplayCounters();
 
         using var device = MetalDevice.CreateSystemDefault();
         using var vertLib = device.NewLibrary(File.ReadAllBytes(TriangleVertPath));
@@ -292,7 +293,10 @@ public class CommandRecorderTests
 
         // 2 条状态命令 + 1000 条 draw 全部仍处于同一批次中，等待 EndRenderPass 单次回放。
         Assert.Equal(1002, recorder.CommandCount);
+        Assert.Equal(0, MetalCommandList.RenderReplayCallCount);
         recorder.EndRenderPass();
+        Assert.Equal(1, MetalCommandList.RenderReplayCallCount);
         recorder.EndFrame();
+        Assert.Equal(1, MetalCommandList.RenderReplayCallCount);
     }
 }
