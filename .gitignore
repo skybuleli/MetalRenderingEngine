@@ -37,3 +37,4 @@ imgui.ini
 MyGameRnederWiki/
 command-recorder-architecture.html
 *.patch
+__pycache__/
